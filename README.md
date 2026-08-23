@@ -7,7 +7,9 @@ GlassBox is a client-side browser-fingerprinting bench. It runs ~29 families of 
 🔗 **Live demo:** https://glassbox.codecanary.org
 📖 **Anonymization guide:** https://glassbox.codecanary.org/guide
 
-> No screenshots here on purpose: GlassBox displays the viewer's own IP, location, and hardware, so any real screenshot would leak a real person's fingerprint. Run the live demo to see it.
+![GlassBox — example capture with synthetic data](docs/screenshot.png)
+
+<sub>Example capture with **fabricated** data — documentation-range IP/ASN, invented hashes and GPU. GlassBox displays the *viewer's own* IP, location, and hardware, so this illustrative shot uses synthetic values rather than a real fingerprint. Run the [live demo](https://glassbox.codecanary.org) to see your own.</sub>
 
 ## What it measures
 
