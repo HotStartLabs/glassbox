@@ -1,0 +1,15 @@
+# Cloudflare Pages security headers for GlassBox
+#
+# Deliberately minimal. GlassBox's whole job is to measure which browser
+# features/APIs are exposed, so a restrictive Permissions-Policy would corrupt
+# its own readings (features it probes would report as unavailable). And because
+# the app is one self-contained file with inline <script> and <style>, a strict
+# CSP would need 'unsafe-inline' to work at all, which defeats the point — so CSP
+# is omitted rather than added for show. These four are safe and don't break any
+# probe (cross-origin images, STUN, and the geo fetches all still work).
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Strict-Transport-Security: max-age=31536000; includeSubDomains

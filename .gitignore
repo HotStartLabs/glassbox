@@ -1,0 +1,13 @@
+# secrets / local env (defensive — none live in this repo, keep it that way)
+.dev.vars
+.cloudflare-token
+*.token
+.wrangler/
+# deps / build junk
+node_modules/
+dist/
+# OS cruft
+.DS_Store
+Thumbs.db
+# archives
+*.zip

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>GLASSBOX — lower your fingerprint</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#121821; --panel-2:#0e141c; --raise:#161f2b;
+    --line:#1f2b3a; --line-2:#28394c;
+    --ink:#d7dee8; --ink-dim:#8593a5; --ink-faint:#586675;
+    --amber:#ffb000; --amber-dim:#b5810f; --amber-glow:rgba(255,176,0,.28);
+    --coral:#ff6b5c; --teal:#52c7b0; --slate:#6d7f95;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  body{padding:0 0 80px}
+  a{color:var(--amber);text-decoration:none;border-bottom:1px solid var(--amber-dim)}
+  a:hover{color:#ffc540}
+  ::selection{background:var(--amber);color:#0a0e14}
+  .wrap{max-width:940px;margin:0 auto;padding:0 20px}
+
+  header.gh{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0d131b,#0a0e14);
+    position:relative;overflow:hidden}
+  .grid-bg{position:absolute;inset:0;pointer-events:none;
+    background-image:linear-gradient(var(--line-2) 1px,transparent 1px),linear-gradient(90deg,var(--line-2) 1px,transparent 1px);
+    background-size:34px 34px;mask-image:radial-gradient(ellipse 80% 120% at 60% -10%,#000 20%,transparent 75%);opacity:.12}
+  .gh-inner{position:relative;padding:22px 0 26px}
+  .backlink{font-family:var(--mono);font-size:12px;color:var(--ink-dim);border:0;letter-spacing:.02em}
+  .backlink:hover{color:var(--amber)}
+  .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.34em;color:var(--amber);text-transform:uppercase;
+    margin-top:16px;display:flex;align-items:center;gap:9px}
+  .eyebrow::before{content:"";width:7px;height:7px;background:var(--amber);border-radius:1px;box-shadow:0 0 9px 1px var(--amber-glow)}
+  h1{font-family:var(--mono);font-size:clamp(30px,5vw,44px);line-height:1;margin:12px 0 10px;letter-spacing:-.02em;color:var(--ink)}
+  h1 b{color:var(--amber);text-shadow:0 0 22px var(--amber-glow)}
+  .lede{color:var(--ink-dim);font-size:15px;line-height:1.6;max-width:64ch}
+  .lede b{color:var(--ink)}
+
+  .callout{border:1px solid var(--line-2);border-left:3px solid var(--amber);border-radius:6px;
+    background:linear-gradient(180deg,rgba(255,176,0,.05),transparent);padding:15px 17px;margin:26px 0 8px}
+  .callout h2{font-family:var(--mono);font-size:15px;margin:0 0 7px;color:var(--amber);letter-spacing:.01em}
+  .callout p{margin:0;color:var(--ink-dim);font-size:13.5px;line-height:1.6}
+  .callout p b{color:var(--ink)}
+
+  section.step{border-bottom:1px solid var(--line);padding:24px 0}
+  .step-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .step-n{font-family:var(--mono);font-size:12px;color:var(--amber-dim);flex:none}
+  .step-h h3{font-family:var(--mono);font-size:17px;margin:0;color:var(--ink);letter-spacing:.01em;flex:1;min-width:200px}
+  .impact{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;padding:3px 8px;
+    border-radius:3px;border:1px solid;font-weight:600;flex:none}
+  .impact.high{color:var(--coral);border-color:rgba(255,107,92,.4);background:rgba(255,107,92,.08)}
+  .impact.med{color:var(--amber);border-color:rgba(255,176,0,.35);background:rgba(255,176,0,.07)}
+  .impact.low{color:var(--teal);border-color:rgba(82,199,176,.35);background:rgba(82,199,176,.07)}
+  .step p{color:var(--ink-dim);font-size:14px;line-height:1.65;margin:8px 0}
+  .step p b{color:var(--ink)}
+  .step .panel-ref{font-family:var(--mono);font-size:11px;color:var(--ink-faint);letter-spacing:.02em;margin-top:6px}
+  ul.do{list-style:none;padding:0;margin:10px 0 0}
+  ul.do li{position:relative;padding:5px 0 5px 24px;color:var(--ink-dim);font-size:13.5px;line-height:1.55}
+  ul.do li::before{content:"→";position:absolute;left:2px;color:var(--teal)}
+  ul.do li.dont::before{content:"✕";color:var(--coral)}
+  ul.do li b{color:var(--ink)}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel);border:1px solid var(--line-2);
+    border-radius:3px;padding:1px 6px;color:var(--amber)}
+
+  .myths{margin-top:24px;border:1px solid var(--line);border-radius:6px;background:var(--panel);overflow:hidden}
+  .myths .mh{font-family:var(--mono);font-size:13px;color:var(--coral);padding:12px 16px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(255,107,92,.06),transparent);letter-spacing:.02em;text-transform:uppercase}
+  .myths ul{margin:0;padding:10px 16px 14px 34px}
+  .myths li{color:var(--ink-dim);font-size:13.5px;line-height:1.6;margin:5px 0}
+  .myths li b{color:var(--ink)}
+
+  .foot{margin-top:30px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .btn{font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;color:var(--amber);border:1px solid var(--amber-dim);
+    border-radius:5px;padding:11px 16px;background:rgba(255,176,0,.06);transition:.14s}
+  .btn:hover{background:rgba(255,176,0,.13);border-color:var(--amber)}
+  .btn.ghost{color:var(--ink-dim);border-color:var(--line-2);background:transparent}
+  .btn.ghost:hover{color:var(--amber);border-color:var(--amber-dim)}
+  .fine{font-family:var(--sans);color:var(--ink-faint);font-size:12px;line-height:1.6;margin-top:26px;border-top:1px solid var(--line);padding-top:18px}
+  .fine b{color:var(--ink-dim)}
+</style>
+</head>
+<body>
+
+<header class="gh">
+  <div class="grid-bg"></div>
+  <div class="wrap gh-inner">
+    <a class="backlink" href="/">&larr; back to GlassBox</a>
+    <div class="eyebrow">Field guide · blend in, don't stand out</div>
+    <h1>Lower your <b>fingerprint</b></h1>
+    <p class="lede">GlassBox showed you how identifiable your browser is. This is how to bring that number down. The counter-intuitive part first: <b>the goal is not to hide every signal — it's to look like everyone else.</b> A heavily "hardened" browser with a rare mix of spoofed values is often <b>more</b> identifiable than a stock one, because almost nobody else looks exactly like it.</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="callout">
+    <h2>The one rule that matters</h2>
+    <p><b>Join a big crowd running an identical disguise.</b> Fingerprinting works by finding the combination of traits that is rare. The fix isn't a hundred tweaks — it's using a browser where millions of people present the <b>same</b> canvas, fonts, screen size and API surface, so your traits stop being distinguishing. Everything below serves that goal.</p>
+  </div>
+
+  <section class="step">
+    <div class="step-h"><span class="step-n">01</span><h3>Pick a browser that makes everyone look alike</h3><span class="impact high">Highest impact</span></div>
+    <p>This single choice moves your number more than all the others combined. In rough order of how well they flatten your fingerprint:</p>
+    <ul class="do">
+      <li><b>Tor Browser</b> — the gold standard. Every user is deliberately made near-identical: same canvas, bundled fonts, letterboxed window, UTC-ish timezone. Keep it at its <b>default window size</b> (don't maximise or resize), and <b>don't add extensions</b> — both carve you back out of the crowd.</li>
+      <li><b>Brave</b> — randomises ("farbles") canvas &amp; audio per-session and blocks many vectors by default. Low effort, everyday-usable.</li>
+      <li><b>Firefox</b> with <code>privacy.resistFingerprinting</code> (in <code>about:config</code>) or at least <b>Strict</b> Enhanced Tracking Protection. RFP spoofs canvas, masks the WebGL renderer and forces a common timezone/size — it can break some sites, which is the trade.</li>
+      <li><b>Safari</b> ships built-in fingerprint simplification that presents a more uniform system profile.</li>
+    </ul>
+    <div class="panel-ref">Affects GlassBox panels: 05 Canvas · 06 WebGL · 08 Audio · 17 API matrix · 27 Resistance</div>
+  </section>
+
+  <section class="step">
+    <div class="step-h"><span class="step-n">02</span><h3>Neutralise the hardware-level IDs: canvas, WebGL, audio</h3><span class="impact high">Highest impact</span></div>
+    <p>These three are the strongest signals on the web — the canvas hash alone can be near-unique. You can't usefully change your GPU, so the play is to <b>mask or randomise</b> the readout.</p>
+    <ul class="do">
+      <li>Use a browser that farbles canvas/audio (Brave) or spoofs them (Firefox RFP, Tor) — see step 01.</li>
+      <li class="dont">Don't trust a random "canvas blocker" extension that still returns one <b>stable</b> fake value — a constant fake is just a new fingerprint. Per-read randomisation is what actually helps.</li>
+    </ul>
+    <div class="panel-ref">Affects GlassBox panels: 05 Canvas · 06 WebGL · 07 WebGPU · 08 Audio</div>
+  </section>
+
+  <section class="step">
+    <div class="step-h"><span class="step-n">03</span><h3>Stop leaking your font list</h3><span class="impact med">Medium impact</span></div>
+    <p>Installed fonts betray your OS, region and installed apps (Office, Adobe, dev tools). Every unusual font makes you rarer.</p>
+    <ul class="do">
+      <li class="dont">Don't install exotic font packs on the machine you browse from.</li>
+      <li>Tor bundles a fixed font set so all users match; RFP limits font enumeration. Let the browser standardise it rather than curating fonts yourself.</li>
+    </ul>
+    <div class="panel-ref">Affects GlassBox panel: 09 Installed fonts</div>
+  </section>
+
+  <section class="step">
+    <div class="step-h"><span class="step-n">04</span><h3>Don't hand-spoof the user-agent</h3><span class="impact med">Medium impact</span></div>
+    <p>It's tempting to install a UA switcher. Resist it. Trackers cross-check signals, and <b>inconsistency is itself a fingerprint</b>: a UA that says Windows while your WebGL says Apple GPU, or client hints that don't match, flags you as both unusual <em>and</em> evasive — worse than doing nothing.</p>
+    <ul class="do">
+      <li>Change your whole browser (step 01) so the UA, client hints, API surface and hardware signals all tell one coherent, common story.</li>
+      <li class="dont">Don't mix a spoofed UA with an otherwise stock browser.</li>
+    </ul>
+    <div class="panel-ref">Affects GlassBox panels: 01 Navigator · 02 Client hints · 17 API matrix · 23 Automation signals</div>
+  </section>
+
+  <section class="step">
+    <div class="step-h"><span class="step-n">05</span><h3>Keep your window and screen ordinary</h3><span class="impact low">Lower impact</span></div>
+    <p>Resolution, device-pixel-ratio and the exact inner-window size combine into a display signature. Odd zoom levels and unusual multi-monitor sizes stand out.</p>
+    <ul class="do">
+      <li>Browse at <b>100% zoom</b> and a common window size. Tor letterboxes the viewport to rounded, popular dimensions on purpose.</li>
+      <li class="dont">Don't rely on a bespoke resolution as "privacy" — rare sizes are more identifying, not less.</li>
+    </ul>
+    <div class="panel-ref">Affects GlassBox panel: 03 Screen &amp; display · 18 CSS media features</div>
+  </section>
+
+  <section class="step">
+    <div class="step-h"><span class="step-n">06</span><h3>Make timezone and locale match your story</h3><span class="impact med">Medium impact</span></div>
+    <p>If you use a VPN in another country but your browser still reports your home timezone and language, the mismatch is a classic tell that unmasks the VPN. GlassBox cross-checks exactly this.</p>
+    <ul class="do">
+      <li>Firefox RFP and Tor force a uniform timezone (UTC), sidestepping the mismatch.</li>
+      <li>If you set a VPN exit region, align your system/browser timezone and language with it.</li>
+    </ul>
+    <div class="panel-ref">Affects GlassBox panels: 04 Timezone &amp; locale · 26 IP · 21 Keyboard layout</div>
+  </section>
+
+  <section class="step">
+    <div class="step-h"><span class="step-n">07</span><h3>Hide your IP — and plug the WebRTC leak</h3><span class="impact high">Highest impact (separate layer)</span></div>
+    <p>Your IP address is the strongest single identifier, and it's <b>independent</b> of the browser fingerprint — a VPN hides your IP but does nothing for canvas/fonts, and a hardened browser does nothing for your IP. You need both.</p>
+    <ul class="do">
+      <li>Use a reputable <b>VPN</b> or <b>Tor</b> to change/hide your public IP.</li>
+      <li>Close the <b>WebRTC leak</b>: WebRTC can reveal your real IP straight past a VPN. Disable it (Firefox: <code>media.peerconnection.enabled</code> = false), use a browser that blocks it, or a trusted extension. GlassBox flags it when your WebRTC IP differs from your exit IP.</li>
+      <li class="dont">Don't assume "incognito + VPN" hides the fingerprint — the fingerprint is unchanged.</li>
+    </ul>
+    <div class="panel-ref">Affects GlassBox panels: 14 WebRTC / IP · 26 Your IP · location · network</div>
+  </section>
+
+  <section class="step">
+    <div class="step-h"><span class="step-n">08</span><h3>Shrink your cross-site login footprint</h3><span class="impact med">Medium impact</span></div>
+    <p>The <b>set</b> of services you're signed into is deanonymising on its own — few people share the exact same combination. Trackers also ride your logged-in cookies to attach a "pageview" to your real account.</p>
+    <ul class="do">
+      <li>Log out of services you're not actively using; use <b>private/ephemeral windows</b> for casual browsing.</li>
+      <li>Isolate identities with <b>Firefox Multi-Account Containers</b> or separate browser profiles.</li>
+      <li>Clear cookies/site data regularly — though note fingerprinting is designed to survive that, which is why the steps above matter more.</li>
+    </ul>
+    <div class="panel-ref">Affects GlassBox panels: 25 Cookies · 28 Tracking pixel · 29 Login state</div>
+  </section>
+
+  <div class="myths">
+    <div class="mh">Things that feel private but aren't</div>
+    <ul>
+      <li><b>Incognito / private mode alone</b> — same fingerprint, same IP; it only forgets local history and cookies.</li>
+      <li><b>UA-spoofer extensions</b> — create tell-tale inconsistencies and add rarity. Usually net-negative.</li>
+      <li><b>"Maximum hardening"</b> — a unique stack of anti-fingerprinting tweaks can make you the only person who looks like that. Blend in instead of armoring up.</li>
+      <li><b>A VPN by itself</b> — hides your IP, changes nothing about canvas, fonts, WebGL or audio.</li>
+    </ul>
+  </div>
+
+  <p class="fine"><b>The honest bottom line.</b> Perfect anonymity in a browser is hard, and a determined tracker combining enough signals is tough to fully defeat. Realistic goals: raise the cost of tracking you, and disappear into a large crowd. The best single move is Tor Browser or Brave; the best habit is re-checking after every change. <b>Re-run GlassBox and watch your identifiability drop</b> as each step lands.</p>
+
+  <div class="foot">
+    <a class="btn" href="/">&larr; Re-run GlassBox</a>
+    <a class="btn ghost" href="https://coveryourtracks.eff.org" rel="noopener noreferrer">EFF Cover Your Tracks</a>
+    <a class="btn ghost" href="https://www.torproject.org" rel="noopener noreferrer">Tor Project</a>
+    <a class="btn ghost" href="https://codecanary.org" rel="noopener noreferrer">CodeCanary</a>
+  </div>
+
+</main>
+</body>
+</html>

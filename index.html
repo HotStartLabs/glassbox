@@ -1,0 +1,1741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>GLASSBOX — browser fingerprint bench</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#121821; --panel-2:#0e141c; --raise:#161f2b;
+    --line:#1f2b3a; --line-2:#28394c;
+    --ink:#d7dee8; --ink-dim:#8593a5; --ink-faint:#586675;
+    --amber:#ffb000; --amber-dim:#b5810f; --amber-glow:rgba(255,176,0,.28);
+    --coral:#ff6b5c; --teal:#52c7b0; --slate:#6d7f95;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  body{padding:0 0 80px;overflow-x:hidden}
+  a{color:var(--amber);text-decoration:none;border-bottom:1px solid var(--amber-dim)}
+  ::selection{background:var(--amber);color:#0a0e14}
+
+  /* ---------- chrome / header ---------- */
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+  header.bench{border-bottom:1px solid var(--line);position:relative;overflow:hidden;
+    background:
+      linear-gradient(180deg,#0d131b 0%,#0a0e14 100%);}
+  .grid-bg{position:absolute;inset:0;opacity:.5;pointer-events:none;
+    background-image:
+      linear-gradient(var(--line-2) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line-2) 1px,transparent 1px);
+    background-size:34px 34px;mask-image:radial-gradient(ellipse 80% 120% at 60% -10%,#000 20%,transparent 75%);
+    opacity:.12}
+  .head-inner{position:relative;padding:26px 0 22px;display:grid;
+    grid-template-columns:1fr minmax(280px,420px);gap:28px;align-items:end}
+  .brand{display:flex;flex-direction:column;gap:2px}
+  .eyebrow{font-size:10.5px;letter-spacing:.34em;color:var(--amber);text-transform:uppercase;
+    display:flex;align-items:center;gap:9px}
+  .eyebrow::before{content:"";width:7px;height:7px;background:var(--amber);border-radius:1px;
+    box-shadow:0 0 9px 1px var(--amber-glow);animation:blink 2.4s steps(1) infinite}
+  @keyframes blink{0%,70%{opacity:1}71%,100%{opacity:.25}}
+  h1{font-size:44px;line-height:.95;margin:10px 0 8px;letter-spacing:-.02em;font-weight:700;
+    color:var(--ink)}
+  h1 b{color:var(--amber);font-weight:700;text-shadow:0 0 22px var(--amber-glow)}
+  .tag{font-family:var(--sans);color:var(--ink-dim);font-size:14px;max-width:52ch;line-height:1.5}
+  .scope-cell{border:1px solid var(--line-2);background:#070b10;border-radius:5px;overflow:hidden;
+    position:relative;height:118px;box-shadow:inset 0 0 40px rgba(0,0,0,.6)}
+  .scope-cell canvas{display:block;width:100%;height:100%}
+  .scope-tag{position:absolute;top:7px;left:9px;font-size:9.5px;letter-spacing:.2em;
+    color:var(--amber-dim);text-transform:uppercase}
+  .scope-hz{position:absolute;bottom:6px;right:9px;font-size:9.5px;color:var(--ink-faint)}
+
+  /* ---------- identity readout ---------- */
+  .identity{border-bottom:1px solid var(--line);background:var(--panel-2)}
+  .identity .wrap{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;
+    padding:16px 20px}
+  .fp-label{font-size:10px;letter-spacing:.28em;color:var(--ink-faint);text-transform:uppercase;
+    margin-bottom:6px}
+  .fp-hash{font-size:clamp(15px,2.6vw,26px);color:var(--amber);letter-spacing:.06em;
+    word-break:break-all;text-shadow:0 0 16px var(--amber-glow);min-height:1.2em}
+  .fp-meta{font-family:var(--sans);font-size:12px;color:var(--ink-dim);margin-top:7px}
+  .sess-label{margin-top:16px}
+  .sess-ok{color:var(--teal);letter-spacing:0}
+  .fp-hash.sess{font-size:clamp(12px,1.7vw,15px);color:var(--slate);text-shadow:none;
+    letter-spacing:.03em}
+  .entropy-badge{text-align:right}
+  .entropy-badge .num{font-size:34px;color:var(--ink);line-height:1}
+  .entropy-badge .cap{font-size:10px;letter-spacing:.2em;color:var(--ink-faint);text-transform:uppercase}
+  /* identifiability headline */
+  .uniq-pct{font-size:clamp(38px,7vw,58px);line-height:.92;color:var(--coral);font-weight:700;
+    text-shadow:0 0 22px rgba(255,107,92,.28);letter-spacing:-.01em}
+  .uniq-pct.warn{color:var(--coral);text-shadow:0 0 22px rgba(255,107,92,.28)}
+  .uniq-pct.mid{color:var(--amber);text-shadow:0 0 22px var(--amber-glow)}
+  .uniq-pct.ok{color:var(--teal);text-shadow:0 0 22px rgba(82,199,176,.28)}
+  .uniq-pct .q{font-size:.34em;vertical-align:super;color:var(--ink-faint);cursor:help;font-weight:400;
+    text-shadow:none;margin-left:2px}
+  .uniq-line{font-size:13.5px;color:var(--ink);margin-top:8px;line-height:1.4}
+  .uniq-line b{color:var(--ink);font-weight:600}
+  .uniq-band{display:inline-block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+    padding:3px 9px;border-radius:4px;border:1px solid;margin-top:8px;font-weight:600}
+  .uniq-band.warn{color:var(--coral);border-color:rgba(255,107,92,.42);background:rgba(255,107,92,.08)}
+  .uniq-band.mid{color:var(--amber);border-color:rgba(255,176,0,.35);background:rgba(255,176,0,.07)}
+  .uniq-band.ok{color:var(--teal);border-color:rgba(82,199,176,.35);background:rgba(82,199,176,.07)}
+  .uniq-caveat{font-family:var(--sans);font-size:11px;color:var(--ink-faint);margin-top:9px;line-height:1.45;
+    max-width:34ch;margin-left:auto}
+  .uniq-guide{display:inline-block;margin-top:11px;font-size:12px;color:var(--amber);
+    border:1px solid var(--amber-dim);border-radius:4px;padding:7px 12px;background:rgba(255,176,0,.06);
+    letter-spacing:.02em;transition:.14s}
+  .uniq-guide:hover{background:rgba(255,176,0,.13);border-color:var(--amber)}
+  .uniq-sub{font-size:11px;color:var(--ink-faint);margin-top:10px;letter-spacing:.02em}
+  .browser-badge{margin-top:12px;font-size:12px;color:var(--ink);border:1px solid var(--line-2);
+    border-radius:4px;padding:6px 9px;display:inline-block;background:var(--panel)}
+  .browser-badge b{color:var(--amber)}
+  @media (max-width:840px){
+    .uniq-caveat{margin-left:0} .entropy-badge{text-align:left}
+  }
+
+  /* ---------- four-tier identity ---------- */
+  .identity .wrap{align-items:start}
+  .id-left{display:flex;flex-direction:column;gap:18px}
+  .ip-hero{border:1px solid var(--line-2);border-left:3px solid var(--amber);border-radius:6px;
+    padding:14px 16px;background:linear-gradient(180deg,rgba(255,176,0,.05),transparent)}
+  .ip-hero-label{font-size:10px;letter-spacing:.3em;color:var(--ink-faint);text-transform:uppercase}
+  .ip-hero-ip{font-size:clamp(22px,4vw,34px);color:var(--amber);letter-spacing:.02em;line-height:1.1;
+    margin-top:4px;text-shadow:0 0 20px var(--amber-glow);word-break:break-all}
+  .ip-hero-loc{font-size:14px;color:var(--ink);margin-top:6px}
+  .ip-hero-net{font-family:var(--sans);font-size:12px;color:var(--ink-dim);margin-top:4px}
+  .ip-hero-vpn{margin-top:10px;display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    padding:4px 10px;border-radius:4px;border:1px solid}
+  .ip-hero-vpn.ok{color:var(--teal);border-color:rgba(82,199,176,.4);background:rgba(82,199,176,.07)}
+  .ip-hero-vpn.warn{color:var(--coral);border-color:rgba(255,107,92,.45);background:rgba(255,107,92,.08)}
+  .ip-hero-vpn.muted{color:var(--ink-faint);border-color:var(--line-2)}
+  .tiers{display:flex;flex-direction:column;gap:10px}
+  .tier{border-left:2px solid var(--line-2);padding:2px 0 2px 12px}
+  .tier[data-t="hw"]{border-color:var(--coral)}
+  .tier[data-t="engine"]{border-color:var(--amber)}
+  .tier[data-t="build"]{border-color:var(--slate)}
+  .tier[data-t="session"]{border-color:var(--teal)}
+  .tier-h{font-size:11px;letter-spacing:.02em;color:var(--ink);text-transform:uppercase;
+    display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .tier-n{font-size:10px;color:var(--bg);background:var(--ink-dim);border-radius:3px;
+    width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .tier[data-t="hw"] .tier-n{background:var(--coral)}
+  .tier[data-t="engine"] .tier-n{background:var(--amber);color:var(--bg)}
+  .tier[data-t="session"] .tier-n{background:var(--teal);color:var(--bg)}
+  .tier-tag{font-family:var(--sans);font-size:11px;color:var(--ink-faint);text-transform:none;letter-spacing:0}
+  .tier-hash{font-size:12.5px;color:var(--ink-dim);letter-spacing:.02em;word-break:break-all;margin-top:3px;line-height:1.4}
+  .tier[data-t="hw"] .tier-hash{color:var(--coral)}
+  .tier[data-t="engine"] .tier-hash{color:var(--amber);text-shadow:0 0 12px var(--amber-glow)}
+
+  /* ---------- compare ---------- */
+  .compare{border-bottom:1px solid var(--line);background:var(--panel-2)}
+  .compare .wrap{padding:12px 20px}
+  .compare-toggle{background:none;border:0;color:var(--ink-dim);font-family:var(--mono);font-size:12px;
+    cursor:pointer;letter-spacing:.04em;padding:4px 0}
+  .compare-toggle:hover{color:var(--amber)}
+  .compare-body{padding-top:12px}
+  .cmp-help{font-family:var(--sans);font-size:12.5px;color:var(--ink-dim);line-height:1.5;margin:0 0 10px;max-width:78ch}
+  #cmpInput{width:100%;min-height:78px;background:var(--bg);border:1px solid var(--line-2);border-radius:5px;
+    color:var(--ink-dim);font-family:var(--mono);font-size:11px;padding:9px;resize:vertical}
+  .cmp-row{display:flex;align-items:center;gap:12px;margin-top:9px}
+  .cmp-status{font-family:var(--sans);font-size:12px;color:var(--ink-faint)}
+  .cmp-verdict{margin-top:14px;border:1px solid var(--line-2);border-radius:6px;overflow:hidden}
+  .cmp-top{padding:13px 15px;font-size:15px;color:var(--ink);border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--raise),transparent)}
+  .cmp-top b{color:var(--amber)}
+  .cmp-top.same{border-left:3px solid var(--coral)} .cmp-top.same b{color:var(--coral)}
+  .cmp-tiers{padding:6px 15px 13px}
+  .cmp-line{display:grid;grid-template-columns:150px 1fr 62px;gap:12px;align-items:center;padding:8px 0;
+    border-bottom:1px solid rgba(31,43,58,.5);font-size:12px}
+  .cmp-line:last-child{border-bottom:0}
+  .cmp-name{color:var(--ink-dim)}
+  .cmp-name small{display:block;color:var(--ink-faint);font-family:var(--sans);font-size:10.5px;text-transform:none}
+  .cmp-bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+  .cmp-bar > i{display:block;height:100%}
+  .cmp-pct{text-align:right;color:var(--ink)}
+  .cmp-diffs{font-family:var(--sans);font-size:11.5px;color:var(--ink-faint);padding:2px 15px 13px;line-height:1.5}
+
+
+  /* ---------- privacy banner ---------- */
+  .noleak{border-bottom:1px solid var(--line);background:linear-gradient(90deg,rgba(82,199,176,.06),transparent);
+    font-family:var(--sans)}
+  .noleak .wrap{display:flex;gap:12px;align-items:center;padding:11px 20px;font-size:12.5px;color:var(--ink-dim)}
+  .noleak b{color:var(--teal);font-weight:600}
+  .dot-net{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none;
+    box-shadow:0 0 8px rgba(82,199,176,.6)}
+
+  /* ---------- controls ---------- */
+  .toolbar{position:sticky;top:0;z-index:20;background:rgba(10,14,20,.86);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .toolbar .wrap{display:flex;gap:10px;align-items:center;padding:10px 20px;flex-wrap:wrap}
+  .btn{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;color:var(--ink-dim);
+    background:var(--panel);border:1px solid var(--line-2);padding:8px 13px;border-radius:4px;
+    cursor:pointer;text-transform:uppercase;transition:.14s}
+  .btn:hover{color:var(--amber);border-color:var(--amber-dim)}
+  .btn.hot{color:var(--amber);border-color:var(--amber-dim);background:rgba(255,176,0,.06)}
+  .count{font-family:var(--sans);font-size:12px;color:var(--ink-faint);margin-left:auto}
+  .count b{color:var(--ink)}
+
+  /* ---------- panel grid ---------- */
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;padding-top:20px}
+  .panel{border:1px solid var(--line);background:var(--panel);border-radius:6px;overflow:hidden;
+    display:flex;flex-direction:column;transition:border-color .15s}
+  .panel:hover{border-color:var(--line-2)}
+  .panel.flag{border-color:rgba(255,107,92,.35)}
+  .panel.featured{grid-column:1/-1;order:-1;border-color:var(--amber-dim);
+    box-shadow:0 0 0 1px rgba(255,176,0,.08),0 8px 30px rgba(0,0,0,.35)}
+  .panel.featured .p-head{background:linear-gradient(180deg,rgba(255,176,0,.09),transparent)}
+  .panel.featured .p-title{color:var(--amber)}
+  .panel.featured .p-body{column-count:2;column-gap:30px}
+  .panel.featured .row{break-inside:avoid}
+  @media (max-width:840px){ .panel.featured .p-body{column-count:1} }
+  .p-head{display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--raise),transparent)}
+  .p-num{font-size:11px;color:var(--amber-dim);letter-spacing:.1em;flex:none}
+  .p-title{font-size:12.5px;letter-spacing:.04em;color:var(--ink);text-transform:uppercase;flex:1}
+  .sig{font-size:9px;letter-spacing:.16em;text-transform:uppercase;padding:3px 7px;border-radius:3px;
+    border:1px solid;flex:none;font-weight:600}
+  .sig.high{color:var(--coral);border-color:rgba(255,107,92,.4);background:rgba(255,107,92,.08)}
+  .sig.med{color:var(--amber);border-color:rgba(255,176,0,.35);background:rgba(255,176,0,.07)}
+  .sig.low{color:var(--teal);border-color:rgba(82,199,176,.35);background:rgba(82,199,176,.07)}
+  .sig.na{color:var(--slate);border-color:var(--line-2)}
+  .p-body{padding:6px 14px 12px;flex:1}
+  .row{display:grid;grid-template-columns:minmax(96px,38%) 1fr;gap:10px;padding:6px 0;
+    border-bottom:1px solid rgba(31,43,58,.5);font-size:12px;align-items:start}
+  .row:last-child{border-bottom:0}
+  .k{color:var(--ink-faint);letter-spacing:.02em;overflow-wrap:anywhere}
+  .v{color:var(--ink);word-break:break-word;overflow-wrap:anywhere;line-height:1.5}
+  .v.hash{color:var(--amber);letter-spacing:.03em}
+  .v.warn{color:var(--coral)}
+  .v.ok{color:var(--teal)}
+  .v.muted{color:var(--ink-faint)}
+  .note{font-family:var(--sans);font-size:12px;color:var(--ink-dim);line-height:1.5;
+    padding:10px 14px;border-top:1px solid var(--line);background:var(--panel-2)}
+  .note b{color:var(--ink)}
+  .thumb{border:1px solid var(--line-2);border-radius:4px;image-rendering:pixelated;background:#fff;
+    max-width:100%;height:auto}
+  pre.req{margin:2px 0 0;font-family:var(--mono);font-size:10.5px;line-height:1.5;color:var(--ink-dim);
+    background:var(--panel-2);border:1px solid var(--line);border-left:2px solid var(--coral);
+    border-radius:4px;padding:8px 10px;white-space:pre-wrap;word-break:break-all;overflow-x:auto}
+  .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .chip{font-size:10.5px;padding:2px 7px;border:1px solid var(--line-2);border-radius:3px;
+    color:var(--ink-dim);background:var(--panel-2)}
+  .chip.on{color:var(--teal);border-color:rgba(82,199,176,.3)}
+  .chip.off{color:var(--ink-faint);opacity:.55}
+  .bar{height:3px;background:var(--line);border-radius:2px;overflow:hidden;margin-top:3px}
+  .bar > i{display:block;height:100%;background:var(--amber)}
+  .spin{color:var(--ink-faint);font-family:var(--sans);font-size:12px;padding:8px 0}
+  .spin::after{content:"▂▄▆█▆▄▂";animation:sweep 1.1s steps(1) infinite;color:var(--amber-dim);
+    margin-left:6px;letter-spacing:1px}
+  @keyframes sweep{0%{content:"▂▄▆█▆▄▂"}50%{content:"█▆▄▂▄▆█"}}
+
+  footer.foot{margin-top:34px;border-top:1px solid var(--line);padding-top:22px;
+    font-family:var(--sans);color:var(--ink-faint);font-size:12px;line-height:1.6}
+  footer.foot b{color:var(--ink-dim)}
+  kbd{font-family:var(--mono);background:var(--panel);border:1px solid var(--line-2);
+    border-radius:3px;padding:1px 5px;font-size:11px;color:var(--ink-dim)}
+
+  @media (max-width:840px){
+    .head-inner{grid-template-columns:1fr}
+    .scope-cell{height:96px}
+    .grid{grid-template-columns:1fr}
+    .identity .wrap{grid-template-columns:1fr}
+    .entropy-badge{text-align:left}
+    h1{font-size:34px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .eyebrow::before{animation:none}
+    .spin::after{animation:none}
+  }
+</style>
+</head>
+<body>
+
+<header class="bench">
+  <div class="grid-bg"></div>
+  <div class="wrap">
+    <div class="head-inner">
+      <div class="brand">
+        <div class="eyebrow">Fingerprint bench · client-side only</div>
+        <h1>GLASS<b>BOX</b></h1>
+        <div class="tag">Every measurement a website can take from your browser, run live and shown back to you. This is the same class of signals the tracking and anti-fraud scripts collect — surfaced instead of hidden.</div>
+      </div>
+      <div class="scope-cell">
+        <span class="scope-tag">audio-fp probe</span>
+        <canvas id="scope" width="820" height="236"></canvas>
+        <span class="scope-hz" id="scopeHz">—</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="identity">
+  <div class="wrap">
+    <div class="id-left">
+      <div class="ip-hero" id="ipHero">
+        <div class="ip-hero-label">Your IP</div>
+        <div class="ip-hero-ip" id="ipHeroIP">resolving…</div>
+        <div class="ip-hero-loc" id="ipHeroLoc"></div>
+        <div class="ip-hero-net" id="ipHeroNet"></div>
+        <div class="ip-hero-vpn" id="ipHeroVpn"></div>
+      </div>
+      <div class="tiers">
+        <div class="tier" data-t="hw">
+          <div class="tier-h"><span class="tier-n">1</span> Hardware &amp; environment
+            <span class="tier-tag">cross-engine · links you across <em>different</em> browsers</span></div>
+          <div class="tier-hash" id="hwHash">…</div>
+        </div>
+        <div class="tier" data-t="engine">
+          <div class="tier-h"><span class="tier-n">2</span> Engine × hardware
+            <span class="tier-tag">canvas · audio · math · codecs — links within one engine family</span></div>
+          <div class="tier-hash" id="engineHash">…</div>
+        </div>
+        <div class="tier" data-t="build">
+          <div class="tier-h"><span class="tier-n">3</span> Browser build
+            <span class="tier-tag">which browser &amp; version — not who you are</span></div>
+          <div class="tier-hash" id="buildHash">…</div>
+        </div>
+        <div class="tier" data-t="session">
+          <div class="tier-h"><span class="tier-n">4</span> Session
+            <span class="tier-tag sess-ok">theme · quota · timing · IP — resets constantly</span></div>
+          <div class="tier-hash" id="sessHash">…</div>
+        </div>
+      </div>
+    </div>
+    <div class="entropy-badge">
+      <div class="cap">estimated identifiability</div>
+      <div class="uniq-pct" id="uniqPct">—<span class="q" id="uniqQ" title="Share of the ~33 bits of information needed to single out one browser among the world's ~8 billion people. 100% ≈ your fingerprint alone identifies you. This is a model built from published fingerprinting research, not a live-population measurement.">?</span></div>
+      <div class="uniq-line" id="uniqLine">measuring…</div>
+      <div><span class="uniq-band" id="uniqBand" hidden></span></div>
+      <div class="uniq-caveat" id="uniqCaveat"></div>
+      <a class="uniq-guide" href="/guide" id="uniqGuide">Lower your fingerprint — how-to guide →</a>
+      <div class="browser-badge" id="browserBadge">detecting…</div>
+      <div class="uniq-sub" id="entNum">—</div>
+    </div>
+  </div>
+</section>
+
+<section class="compare" id="compareBox">
+  <div class="wrap">
+    <button class="compare-toggle" id="cmpToggle">▸ Compare with a saved report — re-link across browsers</button>
+    <div class="compare-body" id="cmpBody" hidden>
+      <p class="cmp-help">Paste a JSON report from another browser or session (Copy JSON report → paste here). GlassBox scores each tier and tells you whether it's the <b>same machine</b>, same engine family, or same browser — the way a real cross-browser tracker links you.</p>
+      <textarea id="cmpInput" placeholder="Paste a previously copied JSON report here…"></textarea>
+      <div class="cmp-row">
+        <button class="btn" id="cmpRun">Compare</button>
+        <span class="cmp-status" id="cmpStatus"></span>
+      </div>
+      <div id="cmpResult"></div>
+    </div>
+  </div>
+</section>
+
+<div class="noleak">
+  <div class="wrap">
+    <span class="dot-net"></span>
+    <span><b>Mostly local.</b> Every fingerprinting probe runs in your browser and stays here — no analytics, no beacon. The <b>one exception</b> is IP intelligence: on load, GlassBox queries public geolocation APIs (ipwho.is, ipapi.is) to look up your address, network and VPN status. Turn <b>Geo</b> off in the toolbar to stay fully local. View source to confirm the rest.</span>
+  </div>
+</div>
+
+<div class="toolbar">
+  <div class="wrap">
+    <button class="btn" id="btnExpand">Expand notes</button>
+    <button class="btn" id="btnCopy">Copy JSON report</button>
+    <button class="btn" id="btnRerun">Re-run probes</button>
+    <button class="btn" id="btnBehav">Enable behavioral capture</button>
+    <button class="btn hot" id="btnGeo">Geo: on</button>
+    <button class="btn" id="btnLogins">Detect logins</button>
+    <span class="count" id="count"><b id="cDone">0</b> / <b id="cTotal">0</b> panels reporting</span>
+  </div>
+</div>
+
+<main class="wrap">
+  <div class="grid" id="grid"></div>
+
+  <footer class="foot">
+    <p><b>What this is.</b> A diagnostic mirror. Each panel runs one family of fingerprinting or device-enumeration technique and reports the raw values plus a rough <span style="color:var(--coral)">identifying power</span> rating. Individually, most signals are weak; combined, they routinely single out one browser in millions. That combination is the whole game.</p>
+    <p><b>The identifiability % is a model, not a measurement.</b> Signal ratings (High / Medium / Low) reflect research consensus — canvas, WebGL, audio, font lists and the API matrix are consistently strongest. The headline % sums published per-signal entropy, counts only what your browser actually exposes (masked canvas/GPU are discounted), applies a correlation haircut, and caps at the ~33 bits needed to single out one person among ~8 billion. True rarity needs a live population dataset to compare against — the one thing a no-server tool can't compute on its own — so treat this as an order-of-magnitude indicator. One honest wrinkle: a browser that blends into a big crowd (Tor Browser at its default window size, say) is <em>safer</em> than its bit-count here suggests, because everyone in that crowd reports the same values and this model can't see that. For live-population numbers, compare with <a href="https://coveryourtracks.eff.org" rel="noopener noreferrer">EFF Cover Your Tracks</a> and <a href="https://amiunique.org" rel="noopener noreferrer">amiunique.org</a>.</p>
+    <p><b>Sandbox caveat.</b> If you are viewing this inside an embedded frame, some probes (WebRTC, media devices, permissions, sensors) may be blocked by the frame's permissions policy and will report <em>blocked</em> rather than a real value. Host the file at its own origin for the full surface. Shortcuts: <kbd>E</kbd> expand · <kbd>R</kbd> re-run.</p>
+  </footer>
+</main>
+
+<script>
+/* ============================================================
+   GLASSBOX — browser fingerprint bench
+   Single file. No dependencies. No network calls. All client-side.
+   Module registry pattern: each probe returns
+     { rows:[[k,v,cls?]], signal:'high|med|low|na', note, extra? }
+   ============================================================ */
+"use strict";
+
+const $ = s => document.querySelector(s);
+const grid = $("#grid");
+const modules = [];
+function reg(num, title, fn){ modules.push({num, title, fn}); }
+
+/* ---- helpers ---- */
+const yes = v => v ? "yes" : "no";
+const safe = fn => { try { return fn(); } catch(e){ return "err: "+(e && e.message || e); } };
+const has  = (o,k) => { try { return k in o; } catch(e){ return false; } };
+const present = v => (v===undefined?"—":(v===null?"null":String(v)));
+
+async function sha256(str){
+  try{
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+    return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
+  }catch(e){
+    // fallback: cheap 53-bit-ish hash if SubtleCrypto unavailable (non-secure ctx)
+    let h1=0xdeadbeef,h2=0x41c6ce57;
+    for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);
+      h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677);}
+    h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);
+    h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+    return (h2>>>0).toString(16).padStart(8,"0")+(h1>>>0).toString(16).padStart(8,"0")+"·fallback";
+  }
+}
+function short(h){ return h && h.length>18 ? h.slice(0,18)+"…" : h; }
+
+/* Signals fold into four tiers (established empirically across 5 browsers):
+   hw      = raw hardware + environment. The only cross-ENGINE link. Firefox
+             spoofs the WebGL renderer, which is what collapses this tier for it.
+   engine  = engine x hardware (canvas, audio, math, codecs). Links within one
+             engine family (Chrome/Edge/Brave share V8+Blink) but breaks across.
+   build   = which browser + version (UA client hints, API matrix, voices).
+   session = theme, quota, timing, battery, permissions, IP. Resets constantly. */
+const TIERS = { hw:{}, engine:{}, build:{}, session:{} };
+const TIER_MAP = {
+  screen:'hw', hz:'hw', cores:'hw', mem:'hw', touch:'hw',
+  glvendor:'hw', glrend:'hw', gpu:'hw',
+  tz:'hw', locale:'hw', dst:'hw', plat:'hw', langs:'hw',
+  canvas:'engine', audio:'engine', math:'engine', codecs:'engine', glext:'engine', fonts:'engine',
+  ua:'build', uach:'build', apis:'build', voices:'build', kbd:'build',
+  css:'session', timing:'session', quota:'session', net:'session', battery:'session',
+  perms:'session', webrtc:'session', ip:'session', ip_asn:'session', cookies:'session', devices:'session'
+};
+function feed(key,val){
+  if(val===undefined||val===null||val==="") return;
+  (TIERS[TIER_MAP[key]||'session'])[key]=String(val);
+}
+function allSignals(){ return {...TIERS.hw,...TIERS.engine,...TIERS.build,...TIERS.session}; }
+
+/* ---- which browser is this? captured in the report & shown in the header ---- */
+let BROWSER = { name:"Unknown", version:"", engine:"Unknown" };
+async function detectBrowser(){
+  const ua=navigator.userAgent, uad=navigator.userAgentData;
+  let name="Unknown", version="", engine="Blink";
+  if(uad?.brands){
+    const b=uad.brands.find(x=>!/not.?a.?brand|chromium/i.test(x.brand));
+    if(b){ name=b.brand; version=b.version; }
+  }
+  try{ if(navigator.brave && await navigator.brave.isBrave?.()) name="Brave"; }catch(e){}
+  if(/\bEdg\//.test(ua)) name="Microsoft Edge";
+  else if(/\bOPR\//.test(ua)) name="Opera";
+  else if(/\bFirefox\//.test(ua)){ name="Firefox"; engine="Gecko";
+    version=(ua.match(/Firefox\/([\d.]+)/)||[])[1]||""; }
+  else if(/\bChrome\//.test(ua) && name==="Unknown") name="Chrome";
+  if(/Firefox/.test(ua)) engine="Gecko";
+  else if(/Safari/.test(ua) && !/Chrome|Chromium|Edg|Firefox/.test(ua)){ name=name==="Unknown"?"Safari":name; engine="WebKit"; }
+  try{ const h=await uad?.getHighEntropyValues?.(["uaFullVersion"]); if(h?.uaFullVersion) version=h.uaFullVersion; }catch(e){}
+  BROWSER={ name, version:version||"?", engine };
+  return BROWSER;
+}
+
+/* ============================================================
+   01 · NAVIGATOR CORE
+   ============================================================ */
+reg("01","Navigator core", () => {
+  const n = navigator, rows = [];
+  const put = (k,v,cls)=>rows.push([k,present(v),cls]);
+  put("userAgent", n.userAgent);
+  put("platform", safe(()=>n.platform));
+  put("vendor", safe(()=>n.vendor)||"(empty)");
+  put("oscpu", safe(()=>n.oscpu) ?? "—");
+  put("language", n.language);
+  put("languages", safe(()=>(n.languages||[]).join(", ")));
+  put("hardwareConcurrency", n.hardwareConcurrency, "hash");
+  put("deviceMemory (GB)", ("deviceMemory" in n)?n.deviceMemory:"—", "hash");
+  put("maxTouchPoints", n.maxTouchPoints);
+  put("cookieEnabled", yes(n.cookieEnabled));
+  put("doNotTrack", present(n.doNotTrack), n.doNotTrack==="1"?"ok":"muted");
+  put("globalPrivacyControl", ("globalPrivacyControl" in n)?yes(n.globalPrivacyControl):"—",
+      n.globalPrivacyControl?"ok":"muted");
+  put("pdfViewerEnabled", ("pdfViewerEnabled" in n)?yes(n.pdfViewerEnabled):"—");
+  put("webdriver", yes(n.webdriver), n.webdriver?"warn":"ok");
+  feed("ua", n.userAgent);
+  feed("plat", safe(()=>n.platform));
+  feed("langs", safe(()=>(n.languages||[]).join(",")));
+  feed("cores", n.hardwareConcurrency);
+  feed("mem", n.deviceMemory);
+  feed("touch", n.maxTouchPoints);
+  return { rows, signal:"high",
+    note:"The user-agent string plus core hardware counts (CPU cores, device memory, touch points) are a strong base layer. <b>deviceMemory</b> and <b>hardwareConcurrency</b> are coarse but stable, and pin down a device class." };
+});
+
+/* ============================================================
+   02 · USER-AGENT CLIENT HINTS
+   ============================================================ */
+reg("02","UA client hints", async () => {
+  const rows=[]; const uad = navigator.userAgentData;
+  if(!uad){ return { rows:[["userAgentData","not supported","muted"]], signal:"na",
+    note:"Chromium-only. Firefox and Safari don't expose Client Hints, which is itself a distinguishing signal." }; }
+  rows.push(["brands", safe(()=>uad.brands.map(b=>b.brand+" "+b.version).join(" · "))]);
+  rows.push(["mobile", yes(uad.mobile)]);
+  rows.push(["platform", uad.platform]);
+  try{
+    const h = await uad.getHighEntropyValues([
+      "architecture","bitness","model","platformVersion","uaFullVersion","fullVersionList","wow64","formFactor"]);
+    rows.push(["architecture", present(h.architecture),"hash"]);
+    rows.push(["bitness", present(h.bitness)]);
+    rows.push(["model", present(h.model)||"(empty)","hash"]);
+    rows.push(["platformVersion", present(h.platformVersion),"hash"]);
+    rows.push(["uaFullVersion", present(h.uaFullVersion)]);
+    rows.push(["wow64", yes(h.wow64)]);
+    rows.push(["formFactor", present((h.formFactor||[]).join?.(", ") ?? h.formFactor)]);
+    feed("uach", JSON.stringify(h));
+  }catch(e){ rows.push(["highEntropy","blocked: "+e.message,"warn"]); }
+  return { rows, signal:"med",
+    note:"High-entropy client hints hand over the exact OS version, CPU architecture and full browser build on request — precise, and on managed devices sometimes a phone/laptop <b>model</b> string." };
+});
+
+/* ============================================================
+   03 · SCREEN & DISPLAY
+   ============================================================ */
+reg("03","Screen & display", async () => {
+  const s=screen, rows=[];
+  rows.push(["resolution", `${s.width} × ${s.height}`,"hash"]);
+  rows.push(["available", `${s.availWidth} × ${s.availHeight}`]);
+  rows.push(["avail offset", `${present(s.availLeft)} , ${present(s.availTop)}`]);
+  rows.push(["colorDepth", s.colorDepth]);
+  rows.push(["pixelDepth", s.pixelDepth]);
+  rows.push(["devicePixelRatio", window.devicePixelRatio,"hash"]);
+  rows.push(["orientation", safe(()=>s.orientation.type)+" / "+safe(()=>s.orientation.angle+"°")]);
+  rows.push(["screen.isExtended", ("isExtended" in s)?yes(s.isExtended):"—", s.isExtended?"warn":""]);
+  rows.push(["window inner", `${innerWidth} × ${innerHeight}`,"muted"]);
+  rows.push(["window outer", `${outerWidth} × ${outerHeight}`,"muted"]);
+  rows.push(["window pos", `${present(screenX)} , ${present(screenY)}`,"muted"]);
+  // refresh rate via rAF
+  const hz = await measureHz();
+  rows.push(["refresh rate", hz+" Hz (measured)","hash"]);
+  feed("screen", `${s.width}x${s.height}x${s.colorDepth}@${window.devicePixelRatio}`);
+  feed("hz", hz);
+  return { rows, signal:"med",
+    note:"Resolution, pixel ratio and measured refresh rate combine into a stable display signature. <b>isExtended: yes</b> reveals a multi-monitor setup." };
+});
+function measureHz(){
+  return new Promise(res=>{
+    let last=performance.now(), diffs=[], n=0;
+    function tick(t){ const d=t-last; last=t; if(n++>2)diffs.push(d);
+      if(n<26)requestAnimationFrame(tick);
+      else{ diffs.sort((a,b)=>a-b); const med=diffs[diffs.length>>1]||16.7;
+        res(Math.round(1000/med)); } }
+    requestAnimationFrame(tick);
+  });
+}
+
+/* ============================================================
+   04 · TIMEZONE & LOCALE
+   ============================================================ */
+reg("04","Timezone & locale", () => {
+  const rows=[]; const dt = Intl.DateTimeFormat().resolvedOptions();
+  rows.push(["IANA time zone", dt.timeZone,"hash"]);
+  const off = new Date().getTimezoneOffset();
+  rows.push(["UTC offset (min)", -off+" ("+(-off/60)+"h)"]);
+  // DST probe: compare Jan vs Jul offset
+  const jan=new Date(2025,0,1).getTimezoneOffset(), jul=new Date(2025,6,1).getTimezoneOffset();
+  rows.push(["observes DST", yes(jan!==jul)]);
+  rows.push(["locale", dt.locale,"hash"]);
+  rows.push(["calendar", dt.calendar]);
+  rows.push(["numbering", dt.numberingSystem]);
+  rows.push(["hourCycle", present(dt.hourCycle)]);
+  rows.push(["first weekday", safe(()=>new Intl.Locale(navigator.language).weekInfo?.firstDay) ?? "—"]);
+  rows.push(["formatted now", new Intl.DateTimeFormat(undefined,{dateStyle:"full",timeStyle:"long"}).format(new Date()),"muted"]);
+  feed("tz", dt.timeZone); feed("locale", dt.locale); feed("dst", jan!==jul);
+  return { rows, signal:"med",
+    note:"Time zone plus locale plus DST behaviour narrows you to a region and often a specific country/OS locale build — and it's near-impossible to fake consistently across every date." };
+});
+
+/* ============================================================
+   05 · CANVAS FINGERPRINT
+   ============================================================ */
+reg("05","Canvas 2D", async () => {
+  const c=document.createElement("canvas"); c.width=280; c.height=70;
+  const x=c.getContext("2d"); const rows=[];
+  try{
+    x.textBaseline="top"; x.font="16px 'Arial'";
+    x.fillStyle="#f60"; x.fillRect(2,2,110,22);
+    x.fillStyle="#069"; x.fillText("GlassBox \u{1F512} fp \u2591\u2592\u2593 ",6,4);
+    x.fillStyle="rgba(102,204,0,.66)"; x.font="18px 'Times New Roman'";
+    x.fillText("Cwm fjord \u{1F984} \u00E9\u00E7\u00F1",6,26);
+    x.strokeStyle="#0aa"; x.beginPath(); x.arc(220,30,18,0,7); x.stroke();
+    x.globalCompositeOperation="multiply";
+    ["#f0f","#0ff","#ff0"].forEach((col,i)=>{x.fillStyle=col;x.beginPath();
+      x.arc(60+i*30,45,22,0,7);x.fill();});
+    const data=c.toDataURL();
+    const h=await sha256(data);
+    rows.push(["toDataURL hash", short(h),"hash"]);
+    rows.push(["data length", data.length+" chars","muted"]);
+    feed("canvas", h);
+    return { rows, signal:"high", extra:{thumb:data},
+      note:"The same draw commands produce subtly different pixels on different GPUs, drivers, OSes and font stacks. This canvas hash is one of the single most identifying signals on the web." };
+  }catch(e){ return { rows:[["canvas","blocked: "+e.message,"warn"]], signal:"na",
+    note:"Canvas readback was blocked (privacy-resistant browser or extension)." }; }
+});
+
+/* ============================================================
+   06 · WEBGL / WEBGL2
+   ============================================================ */
+reg("06","WebGL renderer", async () => {
+  const rows=[]; const c=document.createElement("canvas");
+  const gl = c.getContext("webgl2") || c.getContext("webgl") || c.getContext("experimental-webgl");
+  if(!gl){ return {rows:[["webgl","not available","warn"]],signal:"na",
+    note:"No WebGL context — unusual, and itself a strong signal (headless or hardened browser)."}; }
+  const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+  const vend = dbg?gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL):gl.getParameter(gl.VENDOR);
+  const rend = dbg?gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);
+  rows.push(["context", (gl instanceof WebGL2RenderingContext)?"webgl2":"webgl1"]);
+  rows.push(["unmasked vendor", present(vend),"hash"]);
+  rows.push(["unmasked renderer", present(rend),"hash"]);
+  rows.push(["GL version", gl.getParameter(gl.VERSION),"muted"]);
+  rows.push(["GLSL version", gl.getParameter(gl.SHADING_LANGUAGE_VERSION),"muted"]);
+  rows.push(["max texture size", gl.getParameter(gl.MAX_TEXTURE_SIZE)]);
+  rows.push(["max viewport", (gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[]).join(" × ")]);
+  const exts = (gl.getSupportedExtensions()||[]);
+  const eh = await sha256(exts.join(","));
+  rows.push(["extensions", exts.length+" supported · #"+short(eh)]);
+  // shader precision
+  const p = safe(()=>{const s=gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER,gl.HIGH_FLOAT);
+    return s?`${s.precision}/${s.rangeMin}/${s.rangeMax}`:"—";});
+  rows.push(["frag high-float prec", p,"muted"]);
+  feed("glvendor", vend); feed("glrend", rend); feed("glext", eh);
+  return { rows, signal:"high",
+    note:"The <b>unmasked renderer</b> is often the literal GPU model string (e.g. \"ANGLE (NVIDIA GeForce RTX…)\"). Together with the extension list it's a hardware-level identifier that survives most privacy tweaks." };
+});
+
+/* ============================================================
+   07 · WEBGPU
+   ============================================================ */
+reg("07","WebGPU adapter", async () => {
+  const rows=[];
+  if(!navigator.gpu){ return {rows:[["navigator.gpu","not supported","muted"]],signal:"na",
+    note:"WebGPU absent. Its presence/absence and adapter details are an emerging fingerprint vector."}; }
+  try{
+    const ad = await navigator.gpu.requestAdapter();
+    if(!ad){ return {rows:[["adapter","null (unavailable)","muted"]],signal:"na",note:"No GPU adapter granted."}; }
+    let info={}; try{ info = ad.info || (ad.requestAdapterInfo && await ad.requestAdapterInfo()) || {}; }catch(e){}
+    rows.push(["vendor", present(info.vendor),"hash"]);
+    rows.push(["architecture", present(info.architecture),"hash"]);
+    rows.push(["device", present(info.device)||"(hidden)"]);
+    rows.push(["description", present(info.description)||"(hidden)"]);
+    const feats=[...(ad.features||[])].sort();   // Set iteration order isn't stable — sort before hashing
+    rows.push(["features", feats.length+" · "+short(await sha256(feats.join(",")))]);
+    rows.push(["max buffer size", present(ad.limits?.maxBufferSize)]);
+    feed("gpu", [info.vendor||"",info.architecture||"",info.device||"",feats.join(",")].join("|"));
+    return { rows, signal:"med",
+      note:"WebGPU exposes GPU vendor/architecture again through a second, independent path — plus a device-specific limits table that varies by hardware." };
+  }catch(e){ return {rows:[["webgpu","err: "+e.message,"warn"]],signal:"na",note:"WebGPU query failed."}; }
+});
+
+/* ============================================================
+   08 · AUDIO FINGERPRINT
+   ============================================================ */
+reg("08","Audio stack", async () => {
+  const rows=[];
+  const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if(!AC){ return {rows:[["OfflineAudioContext","not supported","warn"]],signal:"na",note:"No offline audio context."}; }
+  try{
+    const ctx=new AC(1,44100,44100);
+    const osc=ctx.createOscillator(); osc.type="triangle"; osc.frequency.value=10000;
+    const comp=ctx.createDynamicsCompressor();
+    ["threshold","knee","ratio","attack","release"].forEach((p,i)=>{
+      if(comp[p]) comp[p].value=[-50,40,12,0,.25][i]; });
+    osc.connect(comp); comp.connect(ctx.destination); osc.start(0);
+    const buf = await ctx.startRendering();
+    const ch = buf.getChannelData(0);
+    let sum=0; for(let i=4500;i<5000;i++) sum+=Math.abs(ch[i]);
+    const h = await sha256(sum.toString());
+    rows.push(["render sum", sum.toFixed(8)]);
+    rows.push(["audio-fp hash", short(h),"hash"]);
+    rows.push(["sampleRate", (new (window.AudioContext||window.webkitAudioContext)()).sampleRate+" Hz","muted"]);
+    rows.push(["compressor path", "osc → compressor → dest"]);
+    feed("audio", h);
+    return { rows, signal:"high",
+      note:"This is the exact technique the AliExpress scripts use: run a known waveform through the browser's audio DSP and hash the numerical output. Different math/audio implementations yield different sums — no sound is played. <b>Gain-zeroed but still connected to the destination is what can hijack an audio device.</b>" };
+  }catch(e){ return {rows:[["audio","err: "+e.message,"warn"]],signal:"na",note:"Audio render failed."}; }
+});
+
+/* ============================================================
+   09 · FONTS
+   ============================================================ */
+reg("09","Installed fonts", async () => {
+  const rows=[];
+  const base=["monospace","sans-serif","serif"];
+  const probe=["Arial","Arial Black","Arial Narrow","Calibri","Cambria","Comic Sans MS","Consolas",
+    "Courier New","Georgia","Helvetica","Helvetica Neue","Impact","Lucida Console","Lucida Grande",
+    "Menlo","Monaco","Palatino","Segoe UI","Tahoma","Times New Roman","Trebuchet MS","Verdana",
+    "Cascadia Code","JetBrains Mono","Roboto","Ubuntu","Noto Sans","DejaVu Sans","Liberation Sans",
+    "SF Pro Text","San Francisco","Andale Mono","Gill Sans","Optima","Futura","Baskerville",
+    "Microsoft YaHei","MS Gothic","Malgun Gothic","Apple Color Emoji","Segoe UI Emoji"];
+  const span=document.createElement("span");
+  span.style.cssText="position:absolute;left:-9999px;font-size:72px";
+  span.textContent="mmmmmmmmmwwwwwww\u{1F984}\u4E2D\u6587Il1";
+  document.body.appendChild(span);
+  const baseW={},baseH={};
+  base.forEach(b=>{span.style.fontFamily=b;baseW[b]=span.offsetWidth;baseH[b]=span.offsetHeight;});
+  const found=[];
+  probe.forEach(f=>{
+    for(const b of base){ span.style.fontFamily=`'${f}',${b}`;
+      if(span.offsetWidth!==baseW[b]||span.offsetHeight!==baseH[b]){found.push(f);break;} }
+  });
+  document.body.removeChild(span);
+  const h=await sha256(found.join(","));
+  rows.push(["detected", found.length+" of "+probe.length+" probed","hash"]);
+  rows.push(["font-set hash", short(h),"hash"]);
+  // Local Font Access API
+  let lfa="—";
+  if("queryLocalFonts" in window){ lfa="available (needs user gesture + permission)"; }
+  rows.push(["queryLocalFonts", lfa, ("queryLocalFonts" in window)?"warn":"muted"]);
+  feed("fonts", h);
+  return { rows, signal:"high", extra:{chips:found},
+    note:"Your installed font list leaks OS, region, installed apps (Office, Adobe, dev tools) and language packs. The <b>Local Font Access API</b>, where present, can enumerate every font with permission — turning a guess into a full inventory." };
+});
+
+/* ============================================================
+   10 · MEDIA CODECS
+   ============================================================ */
+reg("10","Media codecs", async () => {
+  const rows=[]; const v=document.createElement("video"); const a=document.createElement("audio");
+  const vids={
+    "H.264":'video/mp4; codecs="avc1.42E01E"',
+    "HEVC/H.265":'video/mp4; codecs="hev1.1.6.L93.B0"',
+    "VP9":'video/webm; codecs="vp9"',
+    "AV1":'video/mp4; codecs="av01.0.05M.08"',
+    "VP8":'video/webm; codecs="vp8"',
+  };
+  const auds={
+    "AAC":'audio/mp4; codecs="mp4a.40.2"',"Opus":'audio/webm; codecs="opus"',
+    "MP3":'audio/mpeg',"FLAC":'audio/flac',"Vorbis":'audio/webm; codecs="vorbis"',
+  };
+  const line=[];
+  for(const [name,t] of Object.entries(vids)){ const r=v.canPlayType(t); line.push(name+":"+(r||"no")); }
+  for(const [name,t] of Object.entries(auds)){ const r=a.canPlayType(t); line.push(name+":"+(r||"no")); }
+  const mseAv1 = safe(()=>window.MediaSource && MediaSource.isTypeSupported(vids["AV1"]));
+  const h=await sha256(line.join("|"));
+  rows.push(["support hash", short(h),"hash"]);
+  rows.push(["MSE AV1", present(mseAv1)]);
+  const extra={chips:line.map(s=>({t:s.split(":")[0],on:!/:(no|)$/.test(s)}))};
+  feed("codecs", h);
+  return { rows, signal:"med", extra:{chipObjs:extra.chips},
+    note:"Which codecs a browser can decode depends on OS licensing, hardware and build flags. The support matrix separates Windows/macOS/Linux and often specific hardware." };
+});
+
+/* ============================================================
+   11 · SPEECH VOICES
+   ============================================================ */
+reg("11","Speech synthesis voices", async () => {
+  const rows=[];
+  if(!("speechSynthesis" in window)){ return {rows:[["speechSynthesis","not supported","muted"]],signal:"na",
+    note:"No speech synthesis engine exposed."}; }
+  const voices = await new Promise(res=>{
+    let v=speechSynthesis.getVoices();
+    if(v.length) return res(v);
+    let done=false; speechSynthesis.onvoiceschanged=()=>{if(!done){done=true;res(speechSynthesis.getVoices());}};
+    setTimeout(()=>{if(!done){done=true;res(speechSynthesis.getVoices());}},600);
+  });
+  const names=voices.map(v=>v.name+"|"+v.lang+(v.localService?"|L":""));
+  const h=await sha256(names.join(","));
+  rows.push(["voice count", voices.length,"hash"]);
+  rows.push(["voice-set hash", short(h),"hash"]);
+  rows.push(["default", present(voices.find(v=>v.default)?.name)||"—","muted"]);
+  feed("voices", h);
+  return { rows, signal:"high", extra:{chips:voices.slice(0,14).map(v=>v.name)},
+    note:"The installed voice list is startlingly unique — it reveals OS, version, installed language packs and cloud vs. local engines. A top-tier signal that most people never think about." };
+});
+
+/* ============================================================
+   12 · MEDIA DEVICES
+   ============================================================ */
+reg("12","Media devices", async () => {
+  const rows=[];
+  if(!navigator.mediaDevices?.enumerateDevices){ return {rows:[["enumerateDevices","not supported","muted"]],signal:"na",note:"Media device enumeration unavailable."}; }
+  try{
+    const d = await navigator.mediaDevices.enumerateDevices();
+    const by = t=>d.filter(x=>x.kind===t).length;
+    rows.push(["audio inputs", by("audioinput")]);
+    rows.push(["audio outputs", by("audiooutput")]);
+    rows.push(["video inputs", by("videoinput")]);
+    rows.push(["labels visible", yes(d.some(x=>x.label)), d.some(x=>x.label)?"warn":"ok"]);
+    rows.push(["groupIds", new Set(d.map(x=>x.groupId).filter(Boolean)).size]);
+    feed("devices", d.map(x=>x.kind).sort().join(","));
+    return { rows, signal:"med",
+      note:"Device <b>counts</b> and groupIds are readable without permission and hint at hardware (headset, webcam, virtual audio). Labels/IDs only unlock after a camera or mic grant — then they become persistent per-device identifiers." };
+  }catch(e){ return {rows:[["enumerateDevices","blocked: "+e.message,"warn"]],signal:"na",note:"Blocked by permissions policy (likely an embedded frame)."}; }
+});
+
+/* ============================================================
+   13 · NETWORK
+   ============================================================ */
+reg("13","Network information", () => {
+  const rows=[]; const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+  if(!c){ return {rows:[["navigator.connection","not supported","muted"]],signal:"na",
+    note:"Network Information API absent (Firefox/Safari). Its absence is itself a signal."}; }
+  rows.push(["effectiveType", present(c.effectiveType)]);
+  rows.push(["downlink (Mbps)", present(c.downlink)]);
+  rows.push(["rtt (ms)", present(c.rtt)]);
+  rows.push(["saveData", yes(c.saveData)]);
+  rows.push(["type", present(c.type)]);
+  feed("net", c.effectiveType, true);
+  return { rows, signal:"low",
+    note:"Deliberately coarsened by browsers for privacy — bucketed speed rather than exact. Weak alone, but distinguishes cellular vs. wired and feeds behavioural models." };
+});
+
+/* ============================================================
+   14 · WEBRTC / IP
+   ============================================================ */
+reg("14","WebRTC / IP leak", async () => {
+  const rows=[];
+  if(!window.RTCPeerConnection){ return {rows:[["RTCPeerConnection","not supported","muted"]],signal:"na",note:"No WebRTC."}; }
+  try{
+    const pc=new RTCPeerConnection({iceServers:[]});
+    pc.createDataChannel("x");
+    let count=0; let masked=false; const real=new Set();
+    const isv4=s=>/^(\d{1,3}\.){3}\d{1,3}$/.test(s) && s.split(".").every(o=>+o<256);
+    const isv6=s=>/^[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,7}$/i.test(s);
+    await new Promise(async res=>{
+      pc.onicecandidate=e=>{
+        if(!e.candidate){res();return;}
+        count++;
+        // ICE SDP: "candidate:<foundation> <comp> <transport> <priority> <ADDRESS> <port> typ ..."
+        // The 5th field is the connection address. The <foundation> is a random per-session
+        // integer and must NOT be treated as an identifier.
+        const addr=(e.candidate.candidate.split(" ")[4]||"").toLowerCase();
+        if(!addr) return;
+        if(addr.endsWith(".local")) masked=true;
+        else if(isv4(addr)||isv6(addr)) real.add(addr);
+      };
+      pc.onicegatheringstatechange=()=>{if(pc.iceGatheringState==="complete")res();};
+      await pc.setLocalDescription(await pc.createOffer());
+      setTimeout(res,1500);
+    });
+    pc.close();
+    const reals=[...real];
+    rows.push(["candidates", count]);
+    rows.push(["mDNS masked", masked?"yes — local address hidden":"—","ok"]);
+    rows.push(["exposed IPs", reals.length? reals.join(", "):"none leaked", reals.length?"warn":"ok"]);
+    // Only a REAL leaked IP is folded, and into the SESSION layer — it moves with your
+    // network, not your device, so it isn't part of the stable identity.
+    if(reals.length) feed("webrtc", reals.sort().join(","), true);
+    return { rows, signal: reals.length?"high":"low",
+      note: reals.length
+        ? "A real IP leaked past mDNS masking — this can expose your local network or public address independent of the page's own connection. It's folded into the <b>session layer</b>, not stable identity, since it changes with your network."
+        : "Modern browsers replace local candidates with <b>.local</b> mDNS names, so no raw IP leaked. The random per-session foundation values are correctly ignored — they are session noise, not an identifier." };
+  }catch(e){ return {rows:[["webrtc","blocked: "+e.message,"warn"]],signal:"na",note:"WebRTC blocked (frame policy or hardened browser)."}; }
+});
+
+/* ============================================================
+   15 · STORAGE & QUOTA
+   ============================================================ */
+reg("15","Storage & quota", async () => {
+  const rows=[];
+  const test=k=>{try{const s=window[k];s.setItem("_g","1");s.removeItem("_g");return "writable";}catch(e){return "blocked";}};
+  rows.push(["localStorage", test("localStorage"), test("localStorage")==="writable"?"":"warn"]);
+  rows.push(["sessionStorage", test("sessionStorage")]);
+  rows.push(["indexedDB", ("indexedDB" in window)?"available":"—"]);
+  rows.push(["cookies", navigator.cookieEnabled?"enabled":"disabled", navigator.cookieEnabled?"":"ok"]);
+  rows.push(["Cache API", ("caches" in window)?"available":"—"]);
+  if(navigator.storage?.estimate){
+    try{ const e=await navigator.storage.estimate();
+      rows.push(["quota estimate", (e.quota/1073741824).toFixed(1)+" GB","hash"]);
+      rows.push(["usage", (e.usage/1048576).toFixed(2)+" MB","muted"]);
+      feed("quota", Math.round(e.quota/1073741824), true);
+    }catch(e){}
+  }
+  if(navigator.storage?.persisted){ try{ rows.push(["persisted", yes(await navigator.storage.persisted())]); }catch(e){} }
+  return { rows, signal:"med",
+    note:"These are the buckets where a persistent ID gets stashed. The <b>quota estimate</b> is a rough proxy for total disk size — a surprising hardware hint that also varies by browser." };
+});
+
+/* ============================================================
+   16 · PERMISSIONS MATRIX
+   ============================================================ */
+reg("16","Permissions matrix", async () => {
+  const rows=[];
+  if(!navigator.permissions?.query){ return {rows:[["permissions","not supported","muted"]],signal:"na",note:"Permissions API unavailable."}; }
+  const names=["geolocation","notifications","camera","microphone","clipboard-read",
+    "clipboard-write","push","midi","background-sync","persistent-storage","accelerometer"];
+  const chips=[];
+  for(const n of names){
+    try{ const p=await navigator.permissions.query({name:n});
+      chips.push({t:n+"·"+p.state, on:p.state==="granted"}); }
+    catch(e){ chips.push({t:n+"·n/a", off:true}); }
+  }
+  feed("perms", chips.map(c=>c.t).join(","), true);
+  return { rows:[["queried", names.length+" permissions"]], signal:"low", extra:{chipObjs:chips},
+    note:"The pattern of granted / denied / prompt states across many permissions forms a small but stable signature, and a mismatch (e.g. notifications denied but present) can flag automation." };
+});
+
+/* ============================================================
+   17 · API SURFACE MATRIX
+   ============================================================ */
+reg("17","API support matrix", async () => {
+  const feats={
+    "Bluetooth":"bluetooth" in navigator,"USB":"usb" in navigator,"Serial":"serial" in navigator,
+    "HID":"hid" in navigator,"NFC":"NDEFReader" in window,"Idle":"IdleDetector" in window,
+    "ContactPicker":"contacts" in navigator,"WakeLock":"wakeLock" in navigator,
+    "PaymentRequest":"PaymentRequest" in window,"WebAuthn":"PublicKeyCredential" in window,
+    "WebXR":"xr" in navigator,"WebTransport":"WebTransport" in window,"WebCodecs":"VideoEncoder" in window,
+    "WebNN":"ml" in navigator,"FileSystemAccess":"showOpenFilePicker" in window,
+    "Gamepad":"getGamepads" in navigator,"Vibration":"vibrate" in navigator,
+    "Battery":"getBattery" in navigator,"Gyroscope":"Gyroscope" in window,
+    "Accelerometer":"Accelerometer" in window,"AmbientLight":"AmbientLightSensor" in window,
+    "EyeDropper":"EyeDropper" in window,"Share":"share" in navigator,
+    "SpeechRecog":"webkitSpeechRecognition" in window||"SpeechRecognition" in window,
+    "ScreenWakeLock":"wakeLock" in navigator,"CredMgmt":"credentials" in navigator,
+    "OffscreenCanvas":"OffscreenCanvas" in window,"BroadcastChannel":"BroadcastChannel" in window,
+    "ResizeObserver":"ResizeObserver" in window,"ReportingObserver":"ReportingObserver" in window,
+  };
+  const on=Object.entries(feats).filter(([,v])=>v).map(([k])=>k);
+  const chips=Object.entries(feats).map(([k,v])=>({t:k,on:v,off:!v}));
+  const h=await sha256(Object.entries(feats).map(([k,v])=>k+v).join(","));
+  feed("apis", h);
+  return { rows:[["available", on.length+" of "+Object.keys(feats).length,"hash"],
+                 ["matrix hash", short(h),"hash"]], signal:"high", extra:{chipObjs:chips},
+    note:"Which experimental and hardware APIs exist is a fingerprint of <b>exact browser + version + platform + flags</b>. This matrix alone often narrows you to a handful of builds worldwide." };
+});
+
+/* ============================================================
+   18 · CSS / MEDIA QUERIES
+   ============================================================ */
+reg("18","CSS media features", async () => {
+  const mm = q => matchMedia(q).matches;
+  const rows=[];
+  const scheme = mm("(prefers-color-scheme:dark)")?"dark":"light";
+  rows.push(["color-scheme", scheme]);
+  rows.push(["reduced-motion", yes(mm("(prefers-reduced-motion:reduce)"))]);
+  rows.push(["reduced-transparency", yes(mm("(prefers-reduced-transparency:reduce)"))]);
+  rows.push(["contrast", mm("(prefers-contrast:more)")?"more":mm("(prefers-contrast:less)")?"less":"normal"]);
+  rows.push(["forced-colors", yes(mm("(forced-colors:active)"))]);
+  rows.push(["inverted-colors", yes(mm("(inverted-colors:inverted)"))]);
+  const gamut = mm("(color-gamut:rec2020)")?"rec2020":mm("(color-gamut:p3)")?"p3":"srgb";
+  rows.push(["color-gamut", gamut,"hash"]);
+  rows.push(["dynamic-range HDR", yes(mm("(dynamic-range:high)")), mm("(dynamic-range:high)")?"warn":""]);
+  rows.push(["pointer", mm("(pointer:fine)")?"fine":mm("(pointer:coarse)")?"coarse":"none"]);
+  rows.push(["any-hover", yes(mm("(any-hover:hover)"))]);
+  rows.push(["reduced-data", yes(mm("(prefers-reduced-data:reduce)"))]);
+  // scrollbar width
+  const d=document.createElement("div"); d.style.cssText="width:100px;height:100px;overflow:scroll;position:absolute;left:-9999px";
+  document.body.appendChild(d); const sw=d.offsetWidth-d.clientWidth; document.body.removeChild(d);
+  rows.push(["scrollbar width", sw+"px","hash"]);
+  feed("css", scheme+gamut+sw, true);
+  return { rows, signal:"med",
+    note:"OS-level display and accessibility preferences leak straight through media queries. <b>color-gamut</b> and HDR support point at monitor class; scrollbar width separates OS/theme." };
+});
+
+/* ============================================================
+   19 · MATH / JS ENGINE
+   ============================================================ */
+reg("19","Math / JS engine", async () => {
+  const rows=[];
+  const fns={
+    "sin(1e300)":Math.sin(1e300),"tan(-1e300)":Math.tan(-1e300),
+    "cosh(10)":Math.cosh(10),"expm1(1)":Math.expm1(1),"sinh(1)":Math.sinh(1),
+    "atanh(.5)":Math.atanh(.5),"acosh(1e300)":Math.acosh(1e300),"pow(π,-100)":Math.pow(Math.PI,-100),
+  };
+  const line=Object.entries(fns).map(([k,v])=>k+"="+v);
+  rows.push(["0.1+0.2", (0.1+0.2).toString(),"muted"]);
+  rows.push(["sin(1e300)", fns["sin(1e300)"].toString().slice(0,16),"muted"]);
+  const h=await sha256(line.join("|"));
+  rows.push(["math hash", short(h),"hash"]);
+  // native toString
+  rows.push(["native fn form", Function.prototype.toString.call(Math.sin).slice(0,28),"muted"]);
+  // error stack style
+  let stackFmt="—"; try{ null.x; }catch(e){ stackFmt = (e.stack||"").split("\n")[0].slice(0,26); }
+  rows.push(["error format", stackFmt,"muted"]);
+  feed("math", h);
+  return { rows, signal:"med",
+    note:"Transcendental math functions are computed by the platform's libm, so their last bits differ across CPU, OS and JS engine (V8 / SpiderMonkey / JavaScriptCore). Cheap, stable, hard to spoof." };
+});
+
+/* ============================================================
+   20 · TIMING / PERFORMANCE
+   ============================================================ */
+reg("20","Timing & compute", async () => {
+  const rows=[];
+  // performance.now resolution
+  let minDelta=Infinity,prev=performance.now();
+  for(let i=0;i<4000;i++){const t=performance.now();const d=t-prev;if(d>0&&d<minDelta)minDelta=d;prev=t;}
+  rows.push(["now() resolution", (minDelta<1?minDelta.toFixed(4):minDelta.toFixed(2))+" ms","hash"]);
+  rows.push(["timeOrigin", performance.timeOrigin?.toFixed(0)+" ms","muted"]);
+  // micro CPU benchmark
+  const t0=performance.now(); let acc=0;
+  for(let i=0;i<2_000_000;i++){acc+=Math.sqrt(i)*1.0000001;}
+  const dur=performance.now()-t0;
+  rows.push(["2M sqrt loop", dur.toFixed(1)+" ms","hash"]);
+  rows.push(["≈ ops/ms", Math.round(2_000_000/dur).toLocaleString(),"muted"]);
+  feed("timing", Math.round(minDelta*10000)+":"+Math.round(dur), true);
+  return { rows, signal:"low",
+    note:"Clock resolution reveals privacy hardening (browsers clamp <b>now()</b> to blunt timing attacks), and a raw compute loop is a coarse CPU-speed class. Noisy, so weak on its own." };
+});
+
+/* ============================================================
+   21 · KEYBOARD LAYOUT
+   ============================================================ */
+reg("21","Keyboard layout", async () => {
+  const rows=[];
+  if(!navigator.keyboard?.getLayoutMap){ return {rows:[["keyboard.getLayoutMap","not supported","muted"]],signal:"na",
+    note:"Keyboard Map API absent (Chromium-only). Its presence is itself a signal."}; }
+  try{
+    const map = await navigator.keyboard.getLayoutMap();
+    const sample=["KeyQ","KeyW","KeyY","KeyZ","Semicolon","BracketLeft","Quote"];
+    const got=sample.map(c=>c.replace("Key","")+"→"+(map.get(c)||"?"));
+    const guess = map.get("KeyQ")==="a"?"AZERTY": map.get("KeyY")==="z"?"QWERTZ":
+                  map.get("KeyQ")==="q"?"QWERTY":"other";
+    rows.push(["layout guess", guess,"hash"]);
+    rows.push(["sample keys", got.join("  "),"muted"]);
+    rows.push(["keys mapped", map.size]);
+    feed("kbd", guess+map.size);
+    return { rows, signal:"med",
+      note:"The physical key→character map reveals your keyboard layout (QWERTY/AZERTY/QWERTZ/Dvorak) and by extension a likely region and language — without a single keystroke." };
+  }catch(e){ return {rows:[["keyboard","blocked: "+e.message,"warn"]],signal:"na",note:"Blocked (needs a secure top-level context)."}; }
+});
+
+/* ============================================================
+   22 · BATTERY
+   ============================================================ */
+reg("22","Battery status", async () => {
+  const rows=[];
+  if(!navigator.getBattery){ return {rows:[["getBattery","not supported","ok"]],signal:"na",
+    note:"Battery Status API removed from most browsers for privacy — its <em>absence</em> is the privacy-preserving state."}; }
+  try{
+    const b=await navigator.getBattery();
+    rows.push(["charging", yes(b.charging)]);
+    rows.push(["level", Math.round(b.level*100)+"%","hash"]);
+    rows.push(["charging time", present(b.chargingTime)+" s","muted"]);
+    rows.push(["discharging time", present(b.dischargingTime)+" s","muted"]);
+    feed("battery", Math.round(b.level*100)+":"+b.charging, true);
+    return { rows, signal:"low",
+      note:"Battery level + charge/discharge times were once used as a short-lived cross-site correlator (same odd values in two tabs = same device). Mostly removed now." };
+  }catch(e){ return {rows:[["battery","err: "+e.message,"warn"]],signal:"na",note:"Battery query failed."}; }
+});
+
+/* ============================================================
+   23 · AUTOMATION / BOT SIGNALS
+   ============================================================ */
+reg("23","Automation signals", async () => {
+  const rows=[]; const flags=[];
+  const check=(name,bad,detail)=>{ rows.push([name, detail, bad?"warn":"ok"]); if(bad)flags.push(name); };
+  check("navigator.webdriver", navigator.webdriver===true, yes(navigator.webdriver===true));
+  check("headless UA", /headless/i.test(navigator.userAgent), /headless/i.test(navigator.userAgent)?"detected":"no");
+  check("plugins empty", (navigator.plugins?.length||0)===0 && !/mobile/i.test(navigator.userAgent),
+        (navigator.plugins?.length||0)+" plugins");
+  check("languages empty", (navigator.languages?.length||0)===0, (navigator.languages?.length||0)+" langs");
+  const cdc = Object.keys(window).some(k=>/^cdc_|^\$cdc|_selenium|__webdriver|__driver|__nightmare/i.test(k))
+    || Object.keys(document).some(k=>/^\$?cdc_|webdriver/i.test(k));
+  check("driver artifacts", cdc, cdc?"found":"none");
+  const chromeUA=/chrome/i.test(navigator.userAgent);
+  check("window.chrome (on Chrome)", chromeUA && !window.chrome, chromeUA?(window.chrome?"present":"MISSING"):"n/a");
+  // permission/notification inconsistency
+  let permMismatch=false;
+  try{ const p=await navigator.permissions.query({name:"notifications"});
+    permMismatch = (Notification.permission==="denied" && p.state==="prompt"); }catch(e){}
+  check("perm inconsistency", permMismatch, permMismatch?"mismatch":"consistent");
+  feed("bot", flags.join(","));
+  return { rows, signal: flags.length?"high":"low", flag:flags.length>0,
+    note: flags.length
+      ? "Signals consistent with automation were found ("+flags.join(", ")+"). This is exactly the checklist anti-fraud stacks run to separate humans from bots and headless browsers."
+      : "No automation tells. These are the checks fraud/anti-bot systems (and the AliExpress AWSC scripts) use to score whether a session is a real human." };
+});
+
+/* ============================================================
+   24 · BEHAVIORAL (opt-in)
+   ============================================================ */
+let behavOn=false, behav={move:0,click:0,key:0,scroll:0,path:0,lastX:0,lastY:0,motion:0};
+reg("24","Behavioral capture", async () => {
+  const rows=[];
+  rows.push(["status", behavOn?"CAPTURING":"idle (opt-in)", behavOn?"warn":"muted"]);
+  rows.push(["pointer moves", behav.move,"hash"]);
+  rows.push(["path length (px)", Math.round(behav.path),"hash"]);
+  rows.push(["clicks", behav.click]);
+  rows.push(["keystrokes", behav.key]);
+  rows.push(["scroll events", behav.scroll]);
+  rows.push(["device-motion samples", behav.motion, ("DeviceMotionEvent" in window)?"":"muted"]);
+  return { rows, signal:"med", live:true,
+    note:"How you move the mouse, the rhythm of your typing and micro-jitter of a phone's motion sensors are strong human-vs-bot and even person-vs-person signals. Click <b>Enable behavioral capture</b> to watch the counters (nothing is recorded or sent — this is aggregate only)." };
+});
+
+/* ============================================================
+   25 · COOKIES
+   ============================================================ */
+reg("25","Cookies", async () => {
+  const rows=[];
+  rows.push(["navigator.cookieEnabled", yes(navigator.cookieEnabled), navigator.cookieEnabled?"":"ok"]);
+  // first-party write/read/delete round-trip
+  let firstParty="blocked";
+  try{
+    document.cookie="_gb_test=1; SameSite=Lax; path=/";
+    firstParty = /(^|;\s*)_gb_test=1/.test(document.cookie) ? "writable" : "blocked";
+    document.cookie="_gb_test=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
+  }catch(e){ firstParty="error"; }
+  rows.push(["first-party cookie", firstParty, firstParty==="writable"?"":"ok"]);
+  const existing=(document.cookie||"").split(";").filter(c=>c.trim()).length;
+  rows.push(["cookies on this page", existing, existing?"warn":"ok"]);
+  // partitioning / third-party signals
+  rows.push(["cookieStore API", ("cookieStore" in window)?"present":"—","muted"]);
+  rows.push(["requestStorageAccess", ("requestStorageAccess" in document)?"present (3P gated)":"—","muted"]);
+  rows.push(["hasStorageAccess", ("hasStorageAccess" in document)?"present":"—","muted"]);
+  feed("cookies", firstParty+":"+navigator.cookieEnabled);
+  return { rows, signal:"low",
+    note:"Cookies are the classic stateful ID — but they're easy to clear, which is why fingerprinting exists. A blocked first-party cookie signals a hardened or incognito context. <b>requestStorageAccess</b> is the modern gate for third-party cookies; its presence means the browser partitions cross-site state." };
+});
+
+/* ============================================================
+   26 · PUBLIC IP  (opt-in — the ONLY probe that touches the network)
+   ============================================================ */
+let geoEnabled=true;
+let geoState={ status:"idle", geo:null, threat:null, stun:[], err:null };
+
+/* single source of truth for the VPN/proxy verdict — used by hero + panel */
+function ipVerdict(){
+  const g=geoState.geo||{}, t=geoState.threat||{};
+  const browserTz=safe(()=>Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const hostingRe=/vpn|proxy|hosting|datacenter|data center|cloud|server|m247|datacamp|ovh|digitalocean|linode|vultr|hetzner|leaseweb|choopa|nforce|packet|amazon|aws|google cloud|microsoft azure|oracle cloud|contabo/i;
+  const flags=[];
+  if(t.is_vpn) flags.push("VPN");
+  if(t.is_proxy) flags.push("proxy");
+  if(t.is_tor) flags.push("Tor");
+  if(t.is_datacenter || (t.company&&/hosting|datacenter/i.test(t.company.type||""))) flags.push("datacenter");
+  if(t.is_abuser) flags.push("abuse-listed");
+  if(!flags.length && hostingRe.test((g.org||"")+" "+(g.isp||"")+" "+((t.company&&t.company.name)||""))) flags.push("hosting ASN");
+  const stunPub=(geoState.stun||[]).filter(x=>/^(\d{1,3}\.){3}\d{1,3}$/.test(x) &&
+    !/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(x));
+  const leak = g.ip && stunPub.length && !stunPub.includes(g.ip);
+  if(leak) flags.push("WebRTC IP leak");
+  const tzFlag = g.tzId && browserTz && browserTz!==g.tzId;
+  let label, cls;
+  if(t.is_vpn||t.is_proxy||t.is_tor||t.is_datacenter||flags.includes("datacenter")||flags.includes("hosting ASN")){
+    label="VPN / proxy / datacenter"; cls="warn";
+  } else if(tzFlag||leak){ label="possible VPN"; cls="warn"; }
+  else { label="residential"; cls="ok"; }
+  return { g, t, browserTz, flags, stunPub, leak, tzFlag, label, cls };
+}
+
+reg("26","Your IP · location · network", async () => {
+  const rows=[];
+  if(!geoEnabled){ rows.push(["status","geo lookup off","muted"]);
+    return { rows, signal:"na", note:"IP geolocation is switched off — GlassBox is running fully local this session. Toggle <b>Geo</b> in the toolbar to look up your address." }; }
+  if(geoState.status==="idle"||geoState.status==="loading"){
+    rows.push(["status", geoState.status==="loading"?"resolving…":"queued","muted"]);
+    return { rows, signal:"na", note:"Querying public IP-intelligence APIs for your address, network and VPN status. This is the one probe that leaves your browser." }; }
+
+  const g=geoState.geo||{}, t=geoState.threat||{};
+  if(geoState.err && !g.ip){ rows.push(["result","lookup failed: "+geoState.err,"warn"]);
+    return { rows, signal:"na", note:"Couldn't reach the geolocation APIs — network block, extension, or CORS. The rest of the report is unaffected." }; }
+
+  // --- identity / location ---
+  rows.push(["public IP", g.ip||"—","warn"]);
+  const place=[g.city,g.region,g.country].filter(Boolean).join(", ");
+  rows.push(["location", (g.flag?g.flag+" ":"")+(place||"—"), place?"warn":"muted"]);
+  if(g.lat!=null&&g.lon!=null) rows.push(["coordinates", `${(+g.lat).toFixed(3)}, ${(+g.lon).toFixed(3)}`,"muted"]);
+  if(g.postal) rows.push(["postal", g.postal,"muted"]);
+  // --- network / ASN ---
+  rows.push(["ASN", g.asn||"—","hash"]);
+  rows.push(["ISP / org", g.org||g.isp||"—","hash"]);
+  if(g.domain) rows.push(["network domain", g.domain,"muted"]);
+  if(g.connType) rows.push(["connection type", g.connType, /host|data|vpn|proxy/i.test(g.connType)?"warn":""]);
+
+  // --- timezone cross-check + VPN verdict (shared helper) ---
+  const V = ipVerdict();
+  rows.push(["browser timezone", V.browserTz,"muted"]);
+  if(g.tzId) rows.push(["IP timezone", g.tzId + (V.tzFlag?"  ⚠ mismatch":"  ✓ aligns"), V.tzFlag?"warn":"ok"]);
+  const vLabel = V.label==="residential" ? "residential — no VPN indicators"
+    : V.label==="possible VPN" ? "possible VPN (soft signals only)" : "VPN / proxy / datacenter IP";
+  rows.push(["VPN / proxy check", vLabel, V.cls]);
+  if(V.flags.length) rows.push(["indicators", V.flags.join(", "),"warn"]);
+  if(V.leak) rows.push(["WebRTC exit", V.stunPub.join(", ")+" (≠ API IP)","warn"]);
+
+  if(g.ip) feed("ip", g.ip);
+  if(g.asn) feed("ip_asn", g.asn);
+
+  const note = V.flags.length
+    ? "This address shows VPN/proxy/datacenter indicators ("+V.flags.join(", ")+"). "+
+      (V.tzFlag?"Your browser timezone ("+V.browserTz+") doesn't match the IP's timezone ("+g.tzId+") — a classic tell that the exit node isn't where you are. ":"")+
+      (V.leak?"WebRTC is also leaking an IP that differs from your exit address — that can unmask the real one behind the VPN. ":"")+
+      "None of these is proof on its own, but together they're a strong signal."
+    : "This looks like a residential connection with no VPN/proxy indicators. The IP pins you to an ISP and a rough location; combined with the fingerprint it points at one person. Timezone cross-checked against the browser"+(g.tzId?" (aligns).":".");
+  return { rows, signal: g.ip?"high":"na", note };
+});
+
+/* ============================================================
+   27 · FINGERPRINT RESISTANCE  (is a privacy browser actually working?)
+   ============================================================ */
+reg("27","Resistance & spoof check", async () => {
+  const rows=[], flags=[], on=[];
+  // 1. WebGL renderer masked?
+  let rend=""; try{ const c=document.createElement("canvas"); const gl=c.getContext("webgl2")||c.getContext("webgl");
+    const d=gl?.getExtension("WEBGL_debug_renderer_info"); rend=d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):(gl?gl.getParameter(gl.RENDERER):""); }catch(e){}
+  const masked=/or similar|generic|swiftshader|llvmpipe|google swiftshader|angle \(google/i.test(rend) ||
+               (/firefox/i.test(navigator.userAgent) && !/RTX|GTX|Radeon|Arc|Apple|Intel|Mali|Adreno/i.test(rend)===false && /or similar/i.test(rend));
+  rows.push(["WebGL renderer", (rend||"—").slice(0,42), masked?"ok":"muted"]);
+  if(masked){ on.push("GPU renderer masked"); }
+  // 2. timer precision clamped?
+  let prev=performance.now(),md=Infinity; for(let i=0;i<3000;i++){const t=performance.now();const dd=t-prev;if(dd>0&&dd<md)md=dd;prev=t;}
+  const clamped = !isFinite(md) || md>=1;
+  rows.push(["timer resolution", isFinite(md)?md.toFixed(3)+" ms":"clamped (∞)", clamped?"ok":"muted"]);
+  if(clamped) on.push("timer precision reduced");
+  // 3. canvas randomized per-read? (render twice, compare)
+  const draw=()=>{const c=document.createElement("canvas");c.width=200;c.height=40;const x=c.getContext("2d");
+    x.textBaseline="top";x.font="16px sans-serif";x.fillStyle="#069";x.fillText("gb\u{1F984}\u2593",4,4);
+    x.fillStyle="rgba(200,0,120,.6)";x.beginPath();x.arc(150,20,15,0,7);x.fill();return c.toDataURL();};
+  const c1=draw(),c2=draw();
+  const canvasRand=c1!==c2;
+  rows.push(["canvas per-read", canvasRand?"randomized ✓":"stable", canvasRand?"ok":"muted"]);
+  if(canvasRand) on.push("canvas farbled per-read");
+  // 4. deviceMemory hidden on a Chromium-looking UA?
+  const chromiumUA=/Chrome\//.test(navigator.userAgent)&&!/Firefox/.test(navigator.userAgent);
+  if(chromiumUA && !("deviceMemory" in navigator)) on.push("deviceMemory hidden");
+  // 5. WebGPU present-but-empty (adapter info stripped)
+  rows.push(["signals detected", on.length? on.join(" · "):"none — hardware fully exposed", on.length?"ok":"warn"]);
+  const verdict = on.length>=2 ? "active" : on.length===1 ? "partial" : "off / bypassed";
+  rows.push(["resistance verdict", verdict, verdict==="active"?"ok":(verdict==="partial"?"":"warn")]);
+  return { rows, signal: on.length?"low":"high",
+    note: on.length
+      ? "Fingerprint resistance looks <b>"+verdict+"</b>. The browser is masking or perturbing hardware signals — good. Note masking only helps if you blend into a crowd running the same disguise; a distinctive canvas or timezone can still carve you out."
+      : "No resistance detected — your real hardware (GPU, canvas, audio, timers) is fully exposed. If this is a privacy browser, its protection isn't active in this context (often the case on file:// or with Shields down). Host on https:// and enable aggressive fingerprint blocking to verify." };
+});
+
+/* ============================================================
+   28 · TRACKING PIXEL  (what a 3rd-party request reveals — reconstructed locally)
+   ============================================================ */
+reg("28","Tracking pixel · what a 3rd party sees", async () => {
+  const rows=[];
+  const url = safe(()=>location.href) || "(this page)";
+  const ref = safe(()=>document.referrer) || "(none / direct)";
+  const ua  = navigator.userAgent;
+  const langs = (navigator.languages||[navigator.language]).map((l,i)=> i? l+";q="+(Math.max(0.1,1-i*0.1)).toFixed(1) : l).join(",");
+  const ch = safe(()=>navigator.userAgentData ? navigator.userAgentData.brands.map(b=>`"${b.brand}";v="${b.version}"`).join(", ") : "—");
+  const plat = safe(()=>navigator.userAgentData?.platform) || "—";
+  const ip = (geoState.geo && geoState.geo.ip) || "your IP (from your connection)";
+  const cookieN = (safe(()=>document.cookie)||"").split(";").filter(c=>c.trim()).length;
+
+  // reconstructed Facebook pixel request (fbevents.js PageView)
+  const fbURL =
+`GET https://www.facebook.com/tr?id=1234567890&ev=PageView
+    &dl=${encodeURIComponent(url)}
+    &rl=${encodeURIComponent(ref)}
+    &sw=${screen.width}&sh=${screen.height}&ts=${Date.now()}`;
+  const headers =
+`Host: www.facebook.com
+User-Agent: ${ua}
+Referer: ${url}
+Accept-Language: ${langs}
+sec-ch-ua: ${ch}
+sec-ch-ua-platform: "${plat}"
+Cookie: c_user=<your Facebook user-id>; xs=<session>  ← attached automatically`;
+  // Google Analytics equivalent
+  const gaURL =
+`GET https://www.google-analytics.com/g/collect?v=2&tid=G-XXXXXXX&en=page_view
+    &dl=${encodeURIComponent(url)}&dr=${encodeURIComponent(ref)}
+    &sr=${screen.width}x${screen.height}&ul=${(navigator.language||"").toLowerCase()}`;
+
+  rows.push(["your IP", ip,"warn"]);
+  rows.push(["Referer (the page)", url,"warn"]);
+  rows.push(["cookies on this origin", cookieN + (cookieN?" — ride along on every request here":" (none set)"), cookieN?"warn":"ok"]);
+  rows.push(["3rd-party cookie", "browser attaches the tracker's own cookie automatically — this page can't read it (cross-origin)","muted"]);
+
+  return { rows, signal:"high",
+    extra:{ code:[
+      {label:"Facebook pixel", text:fbURL},
+      {label:"+ request headers", text:headers},
+      {label:"Google Analytics", text:gaURL} ]},
+    note:"<b>Reconstructed locally — nothing was sent to Facebook or Google.</b> These are the real values <em>your</em> browser would attach to a pixel request, built from what page JS can read. The <b>Referer</b> tells the tracker exactly which page you're on; the <b>User-Agent</b> and client hints describe your device; your <b>IP</b> rides on the packet. The kill shot is the <b>Cookie</b> line: because the request goes to facebook.com, your browser silently attaches your logged-in Facebook cookies — so this \"anonymous\" pageview arrives already stamped with your real account. This page can't read those cookies (cross-origin protection working), but the browser sends them anyway. The same pixel on millions of sites = a cross-site history tied to your name." };
+});
+
+/* ============================================================
+   29 · LOGIN STATE  (which services still recognize you cross-site — opt-in)
+   Runs on YOUR session, shows YOUR exposure. Not a deanonymizer.
+   The endpoint list is the fragile, editable part — tune it freely.
+   ============================================================ */
+let loginState={ status:"idle", results:[], reason:"" };
+/* Redirect-to-image technique: point the login endpoint's own redirect param at an
+   image on that same domain. Logged in -> the endpoint redirects to the image (<img> onload).
+   Logged out -> it serves the login HTML page (<img> onerror). Low false-positive: a login
+   page never serves an image to anonymous users. Endpoints are the fragile part — edit freely. */
+const LOGIN_CONTROL="https://www.google.com/favicon.ico"; // public image, should always load cross-site
+const LOGIN_TARGETS=[
+  {name:"Facebook",  url:"https://www.facebook.com/login.php?next=https%3A%2F%2Fwww.facebook.com%2Ffavicon.ico"},
+  {name:"Google",    url:"https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fwww.google.com%2Ffavicon.ico"},
+  {name:"GitHub",    url:"https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Ffavicon.ico"},
+  {name:"Pinterest", url:"https://www.pinterest.com/login/?next=https%3A%2F%2Fwww.pinterest.com%2Ffavicon.ico"},
+  {name:"Spotify",   url:"https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2Ffavicon.ico"},
+  {name:"Dropbox",   url:"https://www.dropbox.com/login?cont=https%3A%2F%2Fwww.dropbox.com%2Fstatic%2Fimages%2Ffavicon.ico"},
+  {name:"Tumblr",    url:"https://www.tumblr.com/login?redirect_to=https%3A%2F%2Fwww.tumblr.com%2Ffavicon.ico"},
+  {name:"GitLab",    url:"https://gitlab.com/users/sign_in?redirect_to_referer=no"},
+];
+function probeLogin(url, timeout=4500){
+  return new Promise(res=>{
+    const img=new Image(); let done=false;
+    const fin=r=>{ if(done)return; done=true; img.src="about:blank"; res(r); };
+    img.onload=()=>fin("load");
+    img.onerror=()=>fin("error");
+    img.referrerPolicy="no-referrer";
+    setTimeout(()=>fin("timeout"), timeout);
+    try{ img.src=url+(url.includes("?")?"&":"?")+"_gb="+Date.now(); }catch(e){ fin("error"); }
+  });
+}
+async function detectLogins(){
+  // 1. environment check — file:// / null origin can't attach cross-site cookies, so a "0" would be a lie
+  if(location.protocol==="file:" || location.origin==="null"){
+    loginState={status:"blocked", reason:"file", results:[]}; await refreshPanel("29"); return;
+  }
+  loginState={status:"running", results:[]}; await refreshPanel("29");
+  // 2. control probe — does cross-site image loading work here at all?
+  const control=await probeLogin(LOGIN_CONTROL);
+  if(control!=="load"){
+    loginState={status:"blocked", reason:"images", results:[]}; await refreshPanel("29"); return;
+  }
+  // 3. real probes
+  const results=await Promise.all(LOGIN_TARGETS.map(async t=>{
+    const r=await probeLogin(t.url);
+    return { name:t.name, state: r==="load" ? "in" : (r==="timeout" ? "blocked" : "none") };
+  }));
+  loginState={status:"done", results};
+  await refreshPanel("29");
+}
+reg("29","Login state · who recognizes you", async () => {
+  const rows=[];
+  if(loginState.status==="idle"){
+    rows.push(["status","not run","muted"]);
+    return { rows, signal:"na", note:"Detects which services still recognize you cross-site, using the <b>redirect-to-image</b> technique: it points each service's login redirect at an image on that same domain. If you're logged in, the service redirects to the image and it loads; if not, you get the login page and it fails. Click <b>Detect logins</b> in the toolbar. Runs on <em>your</em> session, fans out to those services. Experimental — endpoints break and the whole technique is fading as browsers tighten cross-site cookies." };
+  }
+  if(loginState.status==="running"){ rows.push(["status","calibrating + probing…","muted"]); return { rows, signal:"na", note:"Running a control probe to confirm the environment, then testing each service." }; }
+  if(loginState.status==="blocked"){
+    const why = loginState.reason==="file"
+      ? "This page is on a <b>file:// (null) origin</b>, so cross-site cookies can't attach to any request — every probe would read \"logged out\" no matter what you're actually signed into. That's why the number would be a lie, so GlassBox won't show one. Host on an <b>https://</b> origin (your Cloudflare Pages) for a real read."
+      : "The control probe failed — cross-site images aren't loading in this context at all (strict policy or extension), so login state can't be measured. Not the same as being logged out.";
+    rows.push(["result","can't measure here","warn"]);
+    rows.push(["reason", loginState.reason==="file"?"file:// null origin":"cross-site images blocked","muted"]);
+    return { rows, signal:"na", note:why };
+  }
+  const r=loginState.results, inN=r.filter(x=>x.state==="in").length, blk=r.length-inN;
+  rows.push(["login signals", inN+" of "+r.length, inN?"warn":"ok"]);
+  rows.push(["no signal", blk+" — logged out or SameSite-blocked","ok"]);
+  const chips=r.map(x=>({t:x.name+(x.state==="in"?" ✓":""), on:x.state==="in", off:x.state!=="in"}));
+  return { rows, signal: inN?"high":"low", extra:{chipObjs:chips},
+    note: inN
+      ? "Detected a login signal for <b>"+inN+"</b> service(s): that site's auth cookie is <b>SameSite=None</b>, so it rode along on a cross-site request and an authenticated image loaded. The <em>set</em> of services you're signed into is itself deanonymizing — few people share the exact same combination, and no cookie was ever read to learn it. The control probe passed, so a signal here is real (though a service that ignores its redirect param can still hide a login as a false negative)."
+      : "No login signals — the control probe passed, so the environment is fine and this is a genuine read: every tested service either has you logged out or uses <b>SameSite=Lax/Strict</b> cookies that refuse to attach on a cross-site subrequest. That refusal is the browser defending you, and it's now the default — which is why this technique is dying. Endpoints that strip their redirect param also read as no-signal, so this undercounts rather than overcounts." };
+});
+function chip(o){
+  if(typeof o==="string") return `<span class="chip on">${esc(o)}</span>`;
+  const cls = o.on?"on":(o.off?"off":"");
+  return `<span class="chip ${cls}">${esc(o.t)}</span>`;
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function panelShell(m){
+  const el=document.createElement("section");
+  el.className="panel"; el.id="panel-"+m.num;
+  el.innerHTML=`<div class="p-head">
+      <span class="p-num">${m.num}</span>
+      <span class="p-title">${esc(m.title)}</span>
+      <span class="sig na" data-sig>···</span>
+    </div>
+    <div class="p-body"><div class="spin">probing</div></div>`;
+  return el;
+}
+function paint(el, res){
+  const sig=el.querySelector("[data-sig]");
+  const map={high:"high signal",med:"medium",low:"low signal",na:"n/a"};
+  sig.className="sig "+(res.signal||"na"); sig.textContent=map[res.signal]||"n/a";
+  if(res.flag) el.classList.add("flag");
+  const body=el.querySelector(".p-body");
+  let html="";
+  (res.rows||[]).forEach(([k,v,cls])=>{
+    html+=`<div class="row"><span class="k">${esc(k)}</span><span class="v ${cls||''}">${esc(v)}</span></div>`;
+  });
+  if(res.extra?.thumb) html+=`<div class="row"><span class="k">render</span><span class="v"><img class="thumb" src="${res.extra.thumb}" alt="canvas fingerprint render"></span></div>`;
+  if(res.extra?.chips) html+=`<div class="row"><span class="k">detected</span><span class="v"><div class="chips">${res.extra.chips.map(chip).join("")}</div></span></div>`;
+  if(res.extra?.chipObjs) html+=`<div class="row"><span class="k">matrix</span><span class="v"><div class="chips">${res.extra.chipObjs.map(chip).join("")}</div></span></div>`;
+  if(res.extra?.code) res.extra.code.forEach(c=>{ html+=`<div class="row"><span class="k">${esc(c.label)}</span><span class="v"><pre class="req">${esc(c.text)}</pre></span></div>`; });
+  body.innerHTML=html;
+  if(res.note){
+    let n=el.querySelector(".note");
+    if(!n){ n=document.createElement("div"); n.className="note"; el.appendChild(n); }
+    n.innerHTML=res.note;
+    n.style.display = notesOpen ? "block":"none";
+  }
+}
+
+let notesOpen=false, results={}, liveEls=[];
+async function runAll(){
+  grid.innerHTML=""; results={}; liveEls=[];
+  for(const t of Object.keys(TIERS)) Object.keys(TIERS[t]).forEach(k=>delete TIERS[t][k]);
+  $("#cTotal").textContent=modules.length;
+  let done=0; $("#cDone").textContent=0;
+  const els=modules.map(m=>{const el=panelShell(m);grid.appendChild(el);return el;});
+  await Promise.all(modules.map(async (m,i)=>{
+    let res; try{ res=await m.fn(); }catch(e){ res={rows:[["error",String(e.message||e),"warn"]],signal:"na",note:"Probe threw."}; }
+    results[m.num]={title:m.title,...res};
+    paint(els[i],res);
+    if(res.live) liveEls.push({el:els[i],fn:m.fn});
+    done++; $("#cDone").textContent=done;
+  }));
+  computeIdentity();
+}
+
+/* ---- identifiability estimate ----------------------------------------------
+   HONEST MODEL, not a measurement. Per-signal figures are one-shot entropy
+   estimates in BITS, drawn from published fingerprinting research (Panopticlick
+   2010, AmIUnique 2016, EFF Cover Your Tracks). We (a) count only the STABLE
+   identity tiers (hw/engine/build) — session stuff resets — (b) zero out signals
+   the browser masks or randomises, (c) discount hard for intra-tier correlation,
+   (d) cap at ~log2(world population). A no-server tool can't compute true rarity
+   against a live population; this is an order-of-magnitude indicator. */
+const ENTROPY_BITS = {
+  // hardware & environment
+  screen:4.8, hz:1.3, cores:2.0, mem:1.5, touch:1.0, plat:1.4,
+  glvendor:2.5, glrend:7.0, gpu:2.5, tz:3.3, locale:2.4, dst:0.4, langs:2.8,
+  // engine × hardware
+  canvas:8.5, audio:5.2, math:1.8, codecs:2.6, glext:2.8, fonts:6.5,
+  // browser build
+  ua:5.0, uach:2.6, apis:5.5, voices:4.8, kbd:1.8
+};
+const WORLD_BITS = 33; // log2(~8.6e9) — bits to single out one human on Earth
+function detectMasking(){
+  let glMasked=false, canvasRand=false;
+  try{ const c=document.createElement("canvas"); const gl=c.getContext("webgl2")||c.getContext("webgl");
+    const d=gl&&gl.getExtension("WEBGL_debug_renderer_info");
+    const r=d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):(gl?gl.getParameter(gl.RENDERER):"");
+    glMasked=/swiftshader|llvmpipe|generic|or similar|angle \(google/i.test(r||"");
+  }catch(e){}
+  try{ const draw=()=>{const c=document.createElement("canvas");c.width=60;c.height=20;
+      const x=c.getContext("2d");x.textBaseline="top";x.font="12px sans-serif";
+      x.fillStyle="#069";x.fillText("gb▓\u{1F984}",2,3);return c.toDataURL();};
+    canvasRand = draw()!==draw();   // farbled per-read → not a stable identifier
+  }catch(e){}
+  return { glMasked, canvasRand };
+}
+function estimateEntropy(){
+  const sig = { ...TIERS.hw, ...TIERS.engine, ...TIERS.build };  // stable identity only
+  const m = detectMasking();
+  const perTier = { hw:[], engine:[], build:[] };
+  for(const key in sig){
+    if(!(key in ENTROPY_BITS)) continue;
+    let bits = ENTROPY_BITS[key];
+    if(m.canvasRand && key==="canvas") bits = 0.3;
+    if(m.glMasked && (key==="glrend"||key==="glvendor"||key==="gpu"||key==="glext")) bits *= 0.25;
+    const t = TIER_MAP[key];
+    if(perTier[t]) perTier[t].push(bits);
+  }
+  const tierBits = t => {                       // geometric discount for correlation
+    const arr = perTier[t].sort((a,b)=>b-a); let sum=0, f=1;
+    for(const b of arr){ sum += b*f; f*=0.55; } return sum;
+  };
+  let bits = (tierBits("hw")+tierBits("engine")+tierBits("build")) * 0.9;  // cross-tier haircut
+  bits = Math.min(bits, WORLD_BITS + 4);
+  const capped = Math.min(bits, WORLD_BITS);
+  return { bits, pct: Math.min(99.9, capped/WORLD_BITS*100), oneIn: Math.pow(2, Math.min(bits,63)), masked:m };
+}
+function fmtOneIn(n){
+  if(!isFinite(n)||n<=1) return "1 in 1";
+  const U=[[1e12,"trillion"],[1e9,"billion"],[1e6,"million"],[1e3,"thousand"]];
+  for(const [v,name] of U){ if(n>=v){ const x=n/v; return "1 in "+(x<10?x.toFixed(1):Math.round(x))+" "+name; } }
+  return "1 in "+Math.round(n);
+}
+function uniqBand(bits){
+  if(bits<12) return { label:"Common — you blend in", cls:"ok" };
+  if(bits<22) return { label:"Distinctive", cls:"mid" };
+  if(bits<30) return { label:"Highly identifying", cls:"warn" };
+  return { label:"Effectively unique", cls:"warn" };
+}
+
+async function computeIdentity(){
+  const b=await detectBrowser();
+  $("#browserBadge").innerHTML=`<b>${esc(b.name)}</b> ${esc(b.version)} · ${esc(b.engine)}`;
+  const tierHash = async t => {
+    const k=Object.keys(TIERS[t]).sort();
+    return k.length ? await sha256(k.map(x=>x+"="+TIERS[t][x]).join("|")) : "(none)";
+  };
+  $("#hwHash").textContent = await tierHash("hw");
+  $("#engineHash").textContent = await tierHash("engine");
+  $("#buildHash").textContent = await tierHash("build");
+  $("#sessHash").textContent = await tierHash("session");
+  // --- identifiability estimate ---
+  const E = estimateEntropy();
+  const bd = uniqBand(E.bits);
+  const pctEl=$("#uniqPct");
+  pctEl.className = "uniq-pct "+bd.cls;
+  pctEl.innerHTML = (E.pct<10?E.pct.toFixed(1):Math.round(E.pct))+"%"+
+    '<span class="q" title="Share of the ~33 bits of information needed to single out one browser among the world\'s ~8 billion people. 100% ≈ your fingerprint alone identifies you. A model from published fingerprinting research, not a live-population measurement.">?</span>';
+  const ipBit = (geoState && geoState.geo && geoState.geo.ip) ? " · your IP narrows it further" : "";
+  $("#uniqLine").innerHTML = "≈ <b>"+esc(fmtOneIn(E.oneIn))+"</b> browsers share this profile"+ipBit;
+  const bandEl=$("#uniqBand"); bandEl.hidden=false;
+  bandEl.className="uniq-band "+bd.cls; bandEl.textContent=bd.label;
+  const maskNote = (E.masked.canvasRand||E.masked.glMasked)
+    ? " Masking detected, so this is lower than a stock browser — good." : "";
+  $("#uniqCaveat").textContent = "≈ "+E.bits.toFixed(1)+" bits of identifying info, estimated from fingerprinting research (a model, not a population count)."+maskNote;
+  $("#entNum").textContent = Object.keys(allSignals()).length+" signals folded";
+}
+
+/* ---- toolbar ---- */
+$("#btnExpand").addEventListener("click", e=>{
+  notesOpen=!notesOpen;
+  e.target.classList.toggle("hot",notesOpen);
+  e.target.textContent=notesOpen?"Hide notes":"Expand notes";
+  document.querySelectorAll(".note").forEach(n=>n.style.display=notesOpen?"block":"none");
+});
+$("#btnRerun").addEventListener("click", ()=>runAll());
+$("#btnCopy").addEventListener("click", async e=>{
+  const th = async t => { const k=Object.keys(TIERS[t]).sort();
+    return k.length? await sha256(k.map(x=>x+"="+TIERS[t][x]).join("|")) : "(none)"; };
+  const est=estimateEntropy();
+  const report={ generated:new Date().toISOString(),
+    browser:BROWSER,
+    identifiability:{ percent:Math.round(est.pct), bits:+est.bits.toFixed(1),
+      oneInApprox:Math.round(est.oneIn), band:uniqBand(est.bits).label, model:"estimate, not a live-population measurement" },
+    tierHashes:{ hardware:await th("hw"), engine:await th("engine"),
+                 build:await th("build"), session:await th("session") },
+    tiers:{ hardware:TIERS.hw, engine:TIERS.engine, build:TIERS.build, session:TIERS.session },
+    signals:allSignals(),
+    panels:results };
+  try{ await navigator.clipboard.writeText(JSON.stringify(report,null,2));
+    e.target.textContent=`Copied ✓ (${BROWSER.name})`; setTimeout(()=>e.target.textContent="Copy JSON report",1600); }
+  catch(err){ e.target.textContent="clipboard blocked"; setTimeout(()=>e.target.textContent="Copy JSON report",1400); }
+});
+
+/* ---- IP intelligence: geolocation + ASN + VPN flags + STUN leak check ----
+   These are the only network calls GlassBox makes. Everything else is local. */
+async function stunIPs(){
+  if(!window.RTCPeerConnection) return [];
+  try{
+    const pc=new RTCPeerConnection({iceServers:[
+      {urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun.cloudflare.com:3478"}]});
+    pc.createDataChannel("x");
+    const ips=new Set();
+    await new Promise(async res=>{
+      pc.onicecandidate=ev=>{
+        if(!ev.candidate){res();return;}
+        const a=(ev.candidate.candidate.split(" ")[4]||"");
+        if(/^(\d{1,3}\.){3}\d{1,3}$/.test(a) || (/^[0-9a-f:]+$/i.test(a)&&a.includes(":"))) ips.add(a);
+      };
+      pc.onicegatheringstatechange=()=>{ if(pc.iceGatheringState==="complete") res(); };
+      await pc.setLocalDescription(await pc.createOffer());
+      setTimeout(res,2500);
+    });
+    pc.close(); return [...ips];
+  }catch(e){ return []; }
+}
+function normGeo(src, j){
+  if(src==="ipwho"){ if(j.success===false) return null;
+    return { ip:j.ip, city:j.city, region:j.region, country:j.country, countryCode:j.country_code,
+      continent:j.continent, postal:j.postal, lat:j.latitude, lon:j.longitude,
+      flag:j.flag&&j.flag.emoji, asn:j.connection&&("AS"+j.connection.asn), org:j.connection&&j.connection.org,
+      isp:j.connection&&j.connection.isp, domain:j.connection&&j.connection.domain,
+      connType:null, tzId:j.timezone&&j.timezone.id }; }
+  if(src==="ipapico"){ if(j.error) return null;
+    return { ip:j.ip, city:j.city, region:j.region, country:j.country_name, countryCode:j.country_code,
+      continent:j.continent_code, postal:j.postal, lat:j.latitude, lon:j.longitude, flag:null,
+      asn:j.asn, org:j.org, isp:j.org, domain:null, connType:null, tzId:j.timezone }; }
+  return null;
+}
+async function fetchJSON(url){ const r=await fetch(url,{cache:"no-store",referrerPolicy:"no-referrer"}); return r.json(); }
+
+async function doGeo(){
+  if(!geoEnabled){ geoState={status:"off"}; updateIpHero(); await refreshPanel("26"); return; }
+  geoState={status:"loading"}; updateIpHero(); await refreshPanel("26");
+  let geo=null, threat=null, err=null;
+  // primary + fallback geolocation
+  try{ geo=normGeo("ipwho", await fetchJSON("https://ipwho.is/")); }catch(e){ err=e.message; }
+  if(!geo){ try{ geo=normGeo("ipapico", await fetchJSON("https://ipapi.co/json/")); }catch(e){ err=err||e.message; } }
+  // VPN / proxy / datacenter flags (best-effort, non-fatal)
+  try{ threat=await fetchJSON("https://api.ipapi.is/"); }catch(e){}
+  if(threat && threat.location && geo){ // enrich connection type from ipapi.is
+    if(threat.company&&threat.company.type) geo.connType=threat.company.type;
+    if(!geo.asn && threat.asn&&threat.asn.asn) geo.asn="AS"+threat.asn.asn;
+  }
+  const stun=await stunIPs();
+  geoState={status:"done", geo, threat, stun, err};
+  updateIpHero(); await refreshPanel("26"); await computeIdentity();
+}
+function updateIpHero(){
+  const ipEl=$("#ipHeroIP"), locEl=$("#ipHeroLoc"), netEl=$("#ipHeroNet"), vpnEl=$("#ipHeroVpn");
+  if(!ipEl) return;
+  const set=(el,txt,cls)=>{ el.textContent=txt||""; if(cls!==undefined){ el.className=el.className.replace(/\b(ok|warn|muted)\b/g,"").trim(); if(cls) el.classList.add(cls);} };
+  if(geoState.status==="off"){ set(ipEl,"geo off"); ipEl.style.color="var(--ink-faint)"; set(locEl,""); set(netEl,"IP lookup disabled — fully local"); set(vpnEl,"",""); vpnEl.style.display="none"; return; }
+  if(geoState.status!=="done"){ set(ipEl,"resolving…"); ipEl.style.color=""; set(locEl,""); set(netEl,"querying geolocation APIs"); vpnEl.style.display="none"; return; }
+  const g=geoState.geo||{};
+  if(!g.ip){ set(ipEl,"lookup failed"); ipEl.style.color="var(--ink-faint)"; set(locEl,""); set(netEl,geoState.err?("· "+geoState.err):"geolocation APIs unreachable"); vpnEl.style.display="none"; return; }
+  ipEl.style.color=""; set(ipEl, g.ip);
+  set(locEl, [g.flag, [g.city,g.region,g.country].filter(Boolean).join(", ")].filter(Boolean).join(" "));
+  set(netEl, [g.asn, g.org||g.isp].filter(Boolean).join(" · "));
+  const V=ipVerdict();
+  vpnEl.style.display="inline-block";
+  const label = V.label==="residential" ? "residential IP · no VPN" : V.label==="possible VPN" ? "possible VPN · soft signals" : "VPN / proxy / datacenter";
+  set(vpnEl, label, V.cls);
+}
+async function refreshPanel(num){
+  const i=modules.findIndex(m=>m.num===num); if(i<0) return;
+  const el=$("#panel-"+num); if(!el) return;
+  try{ paint(el, await modules[i].fn()); }catch(e){}
+}
+$("#btnLogins").addEventListener("click", async e=>{
+  e.target.textContent="Probing…"; e.target.classList.add("hot");
+  await detectLogins();
+  e.target.textContent="Detect logins"; e.target.classList.remove("hot");
+});
+$("#btnGeo").addEventListener("click", e=>{
+  geoEnabled=!geoEnabled;
+  e.target.classList.toggle("hot",geoEnabled);
+  e.target.textContent=geoEnabled?"Geo: on":"Geo: off";
+  if(geoEnabled) doGeo();
+  else { geoState={status:"off"}; updateIpHero(); refreshPanel("26"); computeIdentity(); }
+});
+$("#btnBehav").addEventListener("click", e=>{
+  behavOn=!behavOn; e.target.classList.toggle("hot",behavOn);
+  e.target.textContent=behavOn?"Behavioral: ON":"Enable behavioral capture";
+  if(behavOn) startBehav();
+});
+function startBehav(){
+  addEventListener("pointermove",ev=>{ if(!behavOn)return; behav.move++;
+    const dx=ev.clientX-behav.lastX, dy=ev.clientY-behav.lastY;
+    if(behav.lastX) behav.path+=Math.hypot(dx,dy); behav.lastX=ev.clientX; behav.lastY=ev.clientY; },{passive:true});
+  addEventListener("click",()=>behavOn&&behav.click++,{passive:true});
+  addEventListener("keydown",()=>behavOn&&behav.key++,{passive:true});
+  addEventListener("scroll",()=>behavOn&&behav.scroll++,{passive:true});
+  if("DeviceMotionEvent" in window){
+    const attach=()=>addEventListener("devicemotion",()=>behavOn&&behav.motion++,{passive:true});
+    if(typeof DeviceMotionEvent.requestPermission==="function"){
+      DeviceMotionEvent.requestPermission().then(s=>{if(s==="granted")attach();}).catch(()=>{});
+    } else attach();
+  }
+  setInterval(async ()=>{ if(!behavOn)return;
+    for(const {el,fn} of liveEls){ try{ paint(el, await fn()); }catch(e){} }
+  },700);
+}
+/* keyboard shortcuts */
+addEventListener("keydown",e=>{
+  if(e.target.matches?.("input,textarea"))return;
+  if(e.key==="e"||e.key==="E") $("#btnExpand").click();
+  if(e.key==="r"||e.key==="R") runAll();
+});
+
+/* ---- cross-report similarity scorer ----
+   Rough static weights stand in for population entropy: the heavy hardware/engine
+   signals dominate, so matching low-entropy fields (screen, timezone) can't fake a link. */
+const WEIGHT={ canvas:10, audio:9, glrend:9, gpu:6, glext:5, fonts:6, math:5, codecs:4,
+  glvendor:4, voices:5, apis:5, uach:4, kbd:2, screen:3, cores:2, mem:2, tz:3, locale:2,
+  hz:1, devices:2, plat:1, langs:1, dst:1, touch:1,
+  css:1, timing:1, quota:1, net:1, battery:1, perms:1, webrtc:1, ip:2, cookies:1 };
+function tierKeys(t){ return Object.keys(TIER_MAP).filter(k=>TIER_MAP[k]===t); }
+
+function runCompare(){
+  const raw=$("#cmpInput").value.trim();
+  const status=$("#cmpStatus"), out=$("#cmpResult");
+  out.innerHTML=""; status.textContent="";
+  if(!raw){ status.textContent="Paste a report first."; return; }
+  let other; try{ other=JSON.parse(raw); }catch(e){ status.textContent="That isn't valid JSON."; return; }
+  let flat={};
+  if(other.signals) Object.assign(flat, other.signals);
+  if(other.sessionSignals) Object.assign(flat, other.sessionSignals);
+  if(other.tiers) for(const t in other.tiers) Object.assign(flat, other.tiers[t]);
+  if(!Object.keys(flat).length){ status.textContent="No signals found in that report."; return; }
+  const mine=allSignals();
+  const otherB = other.browser ? `${other.browser.name} ${other.browser.version||""}`.trim() : "unknown browser";
+  const mineB = `${BROWSER.name} ${BROWSER.version||""}`.trim();
+
+  const tiers=["hw","engine","build","session"];
+  const names={hw:"Hardware & environment",engine:"Engine × hardware",build:"Browser build",session:"Session"};
+  const tierPct={}; const diffs=[];
+  for(const t of tiers){
+    let both=0,match=0;
+    for(const k of tierKeys(t)){
+      if((k in mine)&&(k in flat)){ both++; if(String(mine[k])===String(flat[k])) match++; else diffs.push(k); }
+    }
+    tierPct[t]= both? match/both : null;
+  }
+  // weighted device linkage (hw + engine signals only)
+  let wSum=0,wMatch=0;
+  for(const k of [...tierKeys("hw"),...tierKeys("engine")]){
+    if((k in mine)&&(k in flat)){ const w=WEIGHT[k]||1; wSum+=w; if(String(mine[k])===String(flat[k])) wMatch+=w; }
+  }
+  const device = wSum? wMatch/wSum : 0;
+  const canvasMatch = mine.canvas && flat.canvas && mine.canvas===flat.canvas;
+  const audioMatch  = mine.audio && flat.audio && mine.audio===flat.audio;
+  const rendMatch   = mine.glrend && flat.glrend && mine.glrend===flat.glrend;
+
+  let verdict, cls="", detail;
+  if((canvasMatch&&audioMatch) || device>=0.9){
+    verdict="Same machine."; cls="same";
+    detail = (tierPct.build??1)>=0.99
+      ? "Hardware, engine and browser build all align — same device, same browser (session state aside)."
+      : "Hardware and engine signals match; only the browser build differs. Same machine, different browser.";
+  } else if(rendMatch && device>=0.6){
+    verdict="Same machine, different engine."; cls="same";
+    detail="The raw GPU renderer and enough hardware align to link you across browser engines. This is the cross-engine anchor holding.";
+  } else if(device<=0.4){
+    verdict="No reliable link.";
+    detail="The heavy hardware and engine signals don't match. Either a different machine — or the same machine with its hardware masked by a privacy browser (spoofed GPU, farbled canvas/audio). Fingerprinting can't confidently connect these two.";
+  } else {
+    verdict="Inconclusive.";
+    detail="Some signals align but the high-value ones are mixed. Not enough to link with confidence, not enough to rule out.";
+  }
+
+  const bar=p=>`<div class="cmp-bar"><i style="width:${Math.round((p??0)*100)}%;background:var(--amber)"></i></div>`;
+  const rowsHtml=tiers.map(t=>{
+    const p=tierPct[t];
+    return `<div class="cmp-line"><div class="cmp-name">${names[t]}</div>
+      ${p===null?'<div class="cmp-name" style="color:var(--ink-faint)">no shared signals</div>':bar(p)}
+      <div class="cmp-pct">${p===null?'—':Math.round(p*100)+'%'}</div></div>`;
+  }).join("");
+  const uniqDiffs=[...new Set(diffs)];
+  out.innerHTML=`<div class="cmp-verdict">
+    <div class="cmp-top ${cls}"><b>${esc(verdict)}</b> &nbsp;<span style="font-size:12px;color:var(--ink-dim)">${esc(mineB)} vs ${esc(otherB)} · device linkage ${Math.round(device*100)}%</span>
+      <div style="font-family:var(--sans);font-size:12.5px;color:var(--ink-dim);margin-top:7px;line-height:1.5">${esc(detail)}</div></div>
+    <div class="cmp-tiers">${rowsHtml}</div>
+    ${uniqDiffs.length?`<div class="cmp-diffs"><b style="color:var(--ink-dim)">Signals that differ:</b> ${uniqDiffs.map(esc).join(", ")}</div>`:""}
+  </div>`;
+  status.textContent="";
+}
+$("#cmpToggle").addEventListener("click", e=>{
+  const body=$("#cmpBody"), open=body.hidden;
+  body.hidden=!open;
+  e.target.textContent=(open?"▾":"▸")+" Compare with a saved report — re-link across browsers";
+});
+$("#cmpRun").addEventListener("click", runCompare);
+
+/* ---- hero oscilloscope (ties to the audio-fp technique) ---- */
+(function scope(){
+  const cv=$("#scope"), g=cv.getContext("2d");
+  const reduce=matchMedia("(prefers-reduced-motion:reduce)").matches;
+  let ph=0;
+  function frame(){
+    const w=cv.width,h=cv.height; g.clearRect(0,0,w,h);
+    // grid
+    g.strokeStyle="rgba(255,176,0,.08)"; g.lineWidth=1;
+    for(let x=0;x<w;x+=w/12){g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.stroke();}
+    for(let y=0;y<h;y+=h/5){g.beginPath();g.moveTo(0,y);g.lineTo(w,y);g.stroke();}
+    // trace: analysed sawtooth+noise, the shape these probes read
+    g.beginPath();
+    for(let x=0;x<w;x++){
+      const t=x/w*Math.PI*8+ph;
+      const saw=(( (t/Math.PI)%2)-1);
+      const y=h/2 - (saw*0.5 + Math.sin(t*3)*0.16 + (Math.sin(t*17)*0.06))*h*0.36;
+      x?g.lineTo(x,y):g.moveTo(x,y);
+    }
+    g.strokeStyle="#ffb000"; g.lineWidth=2;
+    g.shadowColor="rgba(255,176,0,.7)"; g.shadowBlur=8; g.stroke(); g.shadowBlur=0;
+    ph+= reduce?0:0.03;
+    if(!reduce) requestAnimationFrame(frame);
+  }
+  frame();
+  measureHz().then(hz=>{$("#scopeHz").textContent=hz+" Hz display";});
+})();
+
+/* go */
+runAll().then(doGeo);
+</script>
+</body>
+</html>
