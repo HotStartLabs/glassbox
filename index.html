@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="referrer" content="no-referrer">
-<meta name="robots" content="noindex">
+<meta name="robots" content="index, follow">
 <title>GLASSBOX — browser fingerprint bench</title>
 <!-- social share cards (Open Graph + Twitter) -->
 <meta property="og:type" content="website">
@@ -374,6 +374,7 @@
     <p><b>What this is.</b> A diagnostic mirror. Each panel runs one family of fingerprinting or device-enumeration technique and reports the raw values plus a rough <span style="color:var(--coral)">identifying power</span> rating. Individually, most signals are weak; combined, they routinely single out one browser in millions. That combination is the whole game.</p>
     <p><b>The identifiability % is a model, not a measurement.</b> Signal ratings (High / Medium / Low) reflect research consensus — canvas, WebGL, audio, font lists and the API matrix are consistently strongest. The headline % sums published per-signal entropy, counts only what your browser actually exposes (masked canvas/GPU are discounted), applies a correlation haircut, and caps at the ~33 bits needed to single out one person among ~8 billion. True rarity needs a live population dataset to compare against — the one thing a no-server tool can't compute on its own — so treat this as an order-of-magnitude indicator. One honest wrinkle: a browser that blends into a big crowd (Tor Browser at its default window size, say) is <em>safer</em> than its bit-count here suggests, because everyone in that crowd reports the same values and this model can't see that. For live-population numbers, compare with <a href="https://coveryourtracks.eff.org" rel="noopener noreferrer">EFF Cover Your Tracks</a> and <a href="https://amiunique.org" rel="noopener noreferrer">amiunique.org</a>.</p>
     <p><b>Sandbox caveat.</b> If you are viewing this inside an embedded frame, some probes (WebRTC, media devices, permissions, sensors) may be blocked by the frame's permissions policy and will report <em>blocked</em> rather than a real value. Host the file at its own origin for the full surface. Shortcuts: <kbd>E</kbd> expand · <kbd>R</kbd> re-run.</p>
+    <p><b>From CodeCanary.</b> GlassBox is a companion to <a href="https://codecanary.org" rel="noopener">codecanary.org</a>, a passive scanner that grades a site's security headers, verifies its JavaScript hasn't drifted, and checks MCP servers. Source on <a href="https://github.com/HotStartLabs/glassbox" rel="noopener">GitHub</a>.</p>
   </footer>
 </main>
 
