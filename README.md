@@ -2,10 +2,11 @@
 
 **Every measurement a website can take from your browser, run live and shown back to you.**
 
-GlassBox is a client-side browser-fingerprinting bench. It runs ~29 families of fingerprinting and device-enumeration probes against *your own* browser, shows you the raw values, and estimates how identifiable you are. These are the same signals tracking and anti-fraud scripts collect — surfaced instead of hidden.
+GlassBox is a client-side browser-fingerprinting bench. It runs ~31 families of fingerprinting and device-enumeration probes against *your own* browser, shows you the raw values, and estimates how identifiable you are. These are the same signals tracking and anti-fraud scripts collect, surfaced instead of hidden.
 
 🔗 **Live demo:** https://glassbox.codecanary.org
 📖 **Anonymization guide:** https://glassbox.codecanary.org/guide
+📰 **Featured in [The Register](https://www.theregister.com/security/2026/08/24/browser-fingerprint-tool-shows-how-easy-you-are-to-track-using-the-latest-sneaky-tricks/5292015)**
 
 ![GlassBox — example capture with synthetic data](docs/screenshot.png)
 
