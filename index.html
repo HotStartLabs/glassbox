@@ -427,7 +427,7 @@ const TIER_MAP = {
   glvendor:'hw', glrend:'hw', gpu:'hw',
   tz:'hw', locale:'hw', dst:'hw', plat:'hw', langs:'hw',
   canvas:'engine', audio:'engine', math:'engine', codecs:'engine', glext:'engine', fonts:'engine',
-  ua:'build', uach:'build', apis:'build', voices:'build', kbd:'build',
+  ua:'build', uach:'build', apis:'build', voices:'build', kbd:'build', wasm:'build',
   css:'session', timing:'session', quota:'session', net:'session', battery:'session',
   perms:'session', webrtc:'session', ip:'session', ip_asn:'session', cookies:'session', devices:'session'
 };
@@ -1343,6 +1343,65 @@ reg("29","Login state · who recognizes you", async () => {
       ? "Detected a login signal for <b>"+inN+"</b> service(s): that site's auth cookie is <b>SameSite=None</b>, so it rode along on a cross-site request and an authenticated image loaded. The <em>set</em> of services you're signed into is itself deanonymizing — few people share the exact same combination, and no cookie was ever read to learn it. The control probe passed, so a signal here is real (though a service that ignores its redirect param can still hide a login as a false negative)."
       : "No login signals — the control probe passed, so the environment is fine and this is a genuine read: every tested service either has you logged out or uses <b>SameSite=Lax/Strict</b> cookies that refuse to attach on a cross-site subrequest. That refusal is the browser defending you, and it's now the default — which is why this technique is dying. Endpoints that strip their redirect param also read as no-signal, so this undercounts rather than overcounts." };
 });
+
+/* ============================================================
+   30 · WEBASSEMBLY
+   ============================================================ */
+reg("30","WebAssembly", async () => {
+  const wa = window.WebAssembly, rows=[];
+  if(!wa){ return { rows:[["WebAssembly","not supported","warn"]], signal:"na",
+    note:"No WebAssembly at all — very unusual on a modern browser, and a strong signal in itself (an ancient or heavily locked-down client)." }; }
+  const simd = safe(()=>wa.validate(Uint8Array.of(0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11)))===true;
+  const feats = {
+    "streaming compile": typeof wa.compileStreaming==="function",
+    "SIMD": simd,
+    "exception handling": typeof wa.Exception==="function" && typeof wa.Tag==="function",
+    "type reflection": typeof wa.Function==="function",
+    "Global": typeof wa.Global==="function",
+    "Memory": typeof wa.Memory==="function",
+    "Table": typeof wa.Table==="function",
+  };
+  // compile+instantiate a canonical "add" module a few times — a coarse engine-speed tell
+  const mod = Uint8Array.of(0,97,115,109,1,0,0,0,1,7,1,96,2,127,127,1,127,3,2,1,0,7,7,1,3,97,100,100,0,0,10,9,1,7,0,32,0,32,1,106,11);
+  // synchronous compile is allowed for tiny (<4KB) modules — no await, resolves instantly
+  let ms=null; try{ const t0=performance.now(); for(let i=0;i<200;i++){ new wa.Instance(new wa.Module(mod)); } ms=(performance.now()-t0)/200; }catch(e){}
+  const on = Object.entries(feats).filter(([,v])=>v).map(([k])=>k);
+  const chips = Object.entries(feats).map(([k,v])=>({t:k,on:v,off:!v}));
+  const h = await sha256(Object.entries(feats).map(([k,v])=>k+v).join(",")+"|"+navigator.hardwareConcurrency);
+  rows.push(["features", on.length+" of "+Object.keys(feats).length,"hash"]);
+  rows.push(["wasm profile", short(h),"hash"]);
+  if(ms!=null) rows.push(["compile+instantiate", ms.toFixed(3)+" ms (avg 40)","muted"]);
+  feed("wasm", h);
+  return { rows, signal:"med", extra:{chipObjs:chips},
+    note:"The set of WebAssembly features a browser ships — <b>SIMD, exception handling, streaming compile, type reflection</b> — changes release to release, so it pins the engine and its version. WebAssembly runs the same bytes on every machine, which makes differences here close to a pure build fingerprint; the compile time adds a coarse CPU-speed tell." };
+});
+
+/* ============================================================
+   31 · PRIVATE / INCOGNITO  (heuristic, honest about it)
+   ============================================================ */
+reg("31","Private / incognito guess", async () => {
+  const rows=[], tells=[]; const GB=1073741824;
+  let quota=null;
+  if(navigator.storage?.estimate){ try{ const e=await navigator.storage.estimate(); quota=e.quota; }catch(e){} }
+  if(quota!=null){
+    rows.push(["storage quota", (quota/GB).toFixed(2)+" GB","hash"]);
+    if(quota < 1.3*GB) tells.push("quota throttled to "+(quota/GB).toFixed(2)+" GB");
+  } else rows.push(["storage quota","unavailable","muted"]);
+  // Firefox private windows historically drop serviceWorker
+  if(/firefox/i.test(navigator.userAgent) && !("serviceWorker" in navigator)) tells.push("Firefox: serviceWorker absent");
+  // persistent storage is denied in private modes
+  let persisted=null; if(navigator.storage?.persisted){ try{ persisted=await navigator.storage.persisted(); }catch(e){} }
+  rows.push(["persistent storage", persisted===null?"—":yes(persisted), persisted?"":"muted"]);
+  rows.push(["signals", tells.length? tells.join(" · "):"none","muted"]);
+  let verdict,cls;
+  if(quota!=null && quota < 1.3*GB){ verdict="likely private / incognito"; cls="warn"; }
+  else if(quota!=null){ verdict="likely a normal window"; cls="ok"; }
+  else { verdict="inconclusive"; cls="muted"; }
+  rows.push(["verdict", verdict, cls]);
+  return { rows, signal: (quota!=null && quota<1.3*GB)?"med":"low",
+    note:"Private / incognito windows throttle the storage quota to a small fixed budget, while a normal profile exposes a big slice of your disk (tens of GB). That gap is the most reliable cross-browser tell, and it's what this reads. It's a <b>heuristic, not proof</b>: the thresholds move between browser versions and private-mode detection is an arms race browsers actively fight, so on a nearly-full disk a normal window can read as private. The raw quota above is the honest signal." };
+});
+
 function chip(o){
   if(typeof o==="string") return `<span class="chip on">${esc(o)}</span>`;
   const cls = o.on?"on":(o.off?"off":"");
@@ -1416,7 +1475,7 @@ const ENTROPY_BITS = {
   // engine × hardware
   canvas:8.5, audio:5.2, math:1.8, codecs:2.6, glext:2.8, fonts:6.5,
   // browser build
-  ua:5.0, uach:2.6, apis:5.5, voices:4.8, kbd:1.8
+  ua:5.0, uach:2.6, apis:5.5, voices:4.8, kbd:1.8, wasm:2.5
 };
 const WORLD_BITS = 33; // log2(~8.6e9) — bits to single out one human on Earth
 function detectMasking(){
