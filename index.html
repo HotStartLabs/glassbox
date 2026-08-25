@@ -426,7 +426,7 @@ const TIER_MAP = {
   screen:'hw', hz:'hw', cores:'hw', mem:'hw', touch:'hw',
   glvendor:'hw', glrend:'hw', gpu:'hw',
   tz:'hw', locale:'hw', dst:'hw', plat:'hw', langs:'hw',
-  canvas:'engine', audio:'engine', math:'engine', codecs:'engine', glext:'engine', fonts:'engine',
+  canvas:'engine', audio:'engine', math:'engine', codecs:'engine', glext:'engine', fonts:'engine', rects:'engine', tmetrics:'engine',
   ua:'build', uach:'build', apis:'build', voices:'build', kbd:'build', wasm:'build',
   css:'session', timing:'session', quota:'session', net:'session', battery:'session',
   perms:'session', webrtc:'session', ip:'session', ip_asn:'session', cookies:'session', devices:'session'
@@ -1402,6 +1402,70 @@ reg("31","Private / incognito guess", async () => {
     note:"Private / incognito windows throttle the storage quota to a small fixed budget, while a normal profile exposes a big slice of your disk (tens of GB). That gap is the most reliable cross-browser tell, and it's what this reads. It's a <b>heuristic, not proof</b>: the thresholds move between browser versions and private-mode detection is an arms race browsers actively fight, so on a nearly-full disk a normal window can read as private. The raw quota above is the honest signal." };
 });
 
+/* ============================================================
+   32 · LAYOUT / CLIENTRECTS  (farbling-resistant geometry)
+   ============================================================ */
+reg("32","Layout / ClientRects", async () => {
+  const rows=[];
+  const host=document.createElement("div");
+  host.style.cssText="position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap";
+  host.innerHTML = `
+    <span style="display:inline-block;font:15px Arial;transform:rotate(7deg) scale(1.28) skewX(5deg)">GlassBox \u{1F984}中文 fiﬁ</span>
+    <span style="display:inline-block;font:italic 700 22px 'Times New Roman';letter-spacing:.4px">Cwm fjord éçñ ☃</span>
+    <span style="display:inline-block;font:13px monospace;transform:scale(1.7)">AVWaToWy 1lI0O</span>`;
+  document.body.appendChild(host);
+  const vals=[];
+  try{ host.querySelectorAll("span").forEach(el=>{
+    const r=el.getBoundingClientRect(); vals.push(r.width, r.height);      // sizes are intrinsic (page-position independent → stable)
+    for(const cr of el.getClientRects()) vals.push(cr.width, cr.height);
+  }); }catch(e){}
+  let bbox="—", tlen="—";
+  try{
+    const NS="http://www.w3.org/2000/svg";
+    const svg=document.createElementNS(NS,"svg"); svg.setAttribute("width","320"); svg.setAttribute("height","64");
+    const t=document.createElementNS(NS,"text"); t.setAttribute("x","0"); t.setAttribute("y","32");
+    t.setAttribute("font-family","serif"); t.setAttribute("font-size","26"); t.textContent="GlassBox \u{1F984} éçñ offiﬁce";
+    svg.appendChild(t); host.appendChild(svg);
+    const b=t.getBBox(); bbox=[b.x,b.y,b.width,b.height].map(n=>(+n).toFixed(3)).join(", ");
+    tlen=t.getComputedTextLength().toFixed(4);
+  }catch(e){}
+  document.body.removeChild(host);
+  const h=await sha256(vals.map(n=>(+n).toFixed(4)).join(",")+"|"+bbox+"|"+tlen);
+  rows.push(["DOMRect values", vals.length,"muted"]);
+  rows.push(["SVG getBBox", bbox,"muted"]);
+  rows.push(["SVG text length", tlen==="—"?"—":tlen+" px","muted"]);
+  rows.push(["geometry hash", short(h),"hash"]);
+  feed("rects", h);
+  return { rows, signal:"high",
+    note:"The browser lays out transformed, styled text and this reads back the <b>sub-pixel</b> geometry (getClientRects, SVG getBBox, getComputedTextLength). Those fractional sizes depend on the layout engine, font rasterizer, GPU and OS sub-pixel rounding, so they identify much like canvas, but they <b>survive canvas farbling</b>, which only perturbs pixel readback and not layout. A separate, harder-to-mask signal." };
+});
+
+/* ============================================================
+   33 · TEXT METRICS  (measureText — reads metrics, not pixels)
+   ============================================================ */
+reg("33","Text metrics", async () => {
+  const rows=[];
+  const x=document.createElement("canvas").getContext("2d");
+  const fonts=["16px Arial","18px 'Times New Roman'","14px 'Courier New'","20px serif","16px sans-serif"];
+  const strings=["Cwm fjord bank glyphs","中文テスト","\u{1F984}\u{1F680}☃","offiﬁce fi fl","AVWaToéç"];
+  const fields=["width","actualBoundingBoxLeft","actualBoundingBoxRight","actualBoundingBoxAscent","actualBoundingBoxDescent","fontBoundingBoxAscent","fontBoundingBoxDescent","emHeightAscent","emHeightDescent","alphabeticBaseline","hangingBaseline","ideographicBaseline"];
+  const vals=[]; let sampleW=null;
+  try{ for(const f of fonts){ x.font=f;
+    for(const s of strings){ const m=x.measureText(s);
+      if(sampleW===null) sampleW=m.width;
+      for(const fld of fields){ const v=m[fld]; if(typeof v==="number") vals.push(v.toFixed(4)); }
+    } } }catch(e){}
+  let rich=0; try{ const p=x.measureText("Mg"); rich=fields.filter(fld=>typeof p[fld]==="number").length; }catch(e){}
+  const h=await sha256(vals.join(","));
+  rows.push(["metric fields", rich+" of "+fields.length+" exposed","hash"]);
+  rows.push(["sample width", sampleW!=null?(+sampleW).toFixed(4)+" px":"—","muted"]);
+  rows.push(["values collected", vals.length,"muted"]);
+  rows.push(["text-metrics hash", short(h),"hash"]);
+  feed("tmetrics", h);
+  return { rows, signal:"high",
+    note:"<b>measureText</b> hands back the exact width plus ascent/descent and baseline offsets for a string in a given font, a numeric vector tied to the real installed font file, its hinting and the rasterizer. Because it reads <b>metrics, not pixels</b>, it walks straight past canvas-farbling defenses, and it's distinct from the font-<em>presence</em> list in panel 09." };
+});
+
 function chip(o){
   if(typeof o==="string") return `<span class="chip on">${esc(o)}</span>`;
   const cls = o.on?"on":(o.off?"off":"");
@@ -1473,7 +1537,7 @@ const ENTROPY_BITS = {
   screen:4.8, hz:1.3, cores:2.0, mem:1.5, touch:1.0, plat:1.4,
   glvendor:2.5, glrend:7.0, gpu:2.5, tz:3.3, locale:2.4, dst:0.4, langs:2.8,
   // engine × hardware
-  canvas:8.5, audio:5.2, math:1.8, codecs:2.6, glext:2.8, fonts:6.5,
+  canvas:8.5, audio:5.2, math:1.8, codecs:2.6, glext:2.8, fonts:6.5, rects:4.5, tmetrics:3.8,
   // browser build
   ua:5.0, uach:2.6, apis:5.5, voices:4.8, kbd:1.8, wasm:2.5
 };
