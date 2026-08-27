@@ -309,7 +309,7 @@
       <div class="tiers">
         <div class="tier" data-t="hw">
           <div class="tier-h"><span class="tier-n">1</span> Hardware &amp; environment
-            <span class="tier-tag">cross-engine · links you across <em>different</em> browsers</span></div>
+            <span class="tier-tag" id="hwTag">cross-engine · links you across <em>different</em> browsers</span></div>
           <div class="tier-hash" id="hwHash">…</div>
         </div>
         <div class="tier" data-t="engine">
@@ -1226,10 +1226,17 @@ reg("27","Resistance & spoof check", async () => {
   const canvasRand=c1!==c2;
   rows.push(["canvas per-read", canvasRand?"randomized ✓":"stable", canvasRand?"ok":"muted"]);
   if(canvasRand) on.push("canvas farbled per-read");
-  // 4. deviceMemory hidden on a Chromium-looking UA?
+  // 4. audio randomized per-read? (render the same probe twice, compare)
+  const audioRand = await audioFarbled();
+  rows.push(["audio per-read", audioRand?"randomized ✓":"stable", audioRand?"ok":"muted"]);
+  if(audioRand) on.push("audio farbled per-read");
+  // 5. Brave farbling: navigator.brave + at least one noise source actually firing.
+  //    (Brave keys most noise to site+session, so per-read checks alone can miss it.)
+  if(navigator.brave && (canvasRand||audioRand||masked)) on.push("Brave farbling (per-site session noise)");
+  // 6. deviceMemory hidden on a Chromium-looking UA?
   const chromiumUA=/Chrome\//.test(navigator.userAgent)&&!/Firefox/.test(navigator.userAgent);
   if(chromiumUA && !("deviceMemory" in navigator)) on.push("deviceMemory hidden");
-  // 5. WebGPU present-but-empty (adapter info stripped)
+  // 7. WebGPU present-but-empty (adapter info stripped)
   rows.push(["signals detected", on.length? on.join(" · "):"none — hardware fully exposed", on.length?"ok":"warn"]);
   const verdict = on.length>=2 ? "active" : on.length===1 ? "partial" : "off / bypassed";
   rows.push(["resistance verdict", verdict, verdict==="active"?"ok":(verdict==="partial"?"":"warn")]);
@@ -1570,9 +1577,26 @@ function canvasBlank(){
     return true;   // our black fill didn't survive readback → spoofed / blocked
   }catch(e){ return false; }
 }
-function detectMasking(){
+async function audioFarbled(){
+  // Render an identical offline-audio probe twice; differing sums = per-read noise
+  // (Firefox FPP, noise extensions). Brave keys its audio farbling to site+session,
+  // so it reads stable here; the navigator.brave check below covers that case.
+  try{
+    const AC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+    if(!AC) return false;
+    const render=async()=>{ const ctx=new AC(1,44100,44100);
+      const osc=ctx.createOscillator(); osc.type="triangle"; osc.frequency.value=10000;
+      const comp=ctx.createDynamicsCompressor();
+      osc.connect(comp); comp.connect(ctx.destination); osc.start(0);
+      const buf=await ctx.startRendering(); const ch=buf.getChannelData(0);
+      let s=0; for(let i=4500;i<5000;i++) s+=Math.abs(ch[i]); return s; };
+    return (await render())!==(await render());
+  }catch(e){ return false; }
+}
+async function detectMasking(){
   const ff = /firefox/i.test(navigator.userAgent);
-  const m = { glMasked:false, canvasRand:false, canvasSpoofed:false, tzSpoofed:false, rfp:false };
+  const m = { glMasked:false, canvasRand:false, canvasSpoofed:false, tzSpoofed:false,
+              audioRand:false, brave:!!navigator.brave, braveFarbling:false, rfp:false };
   try{ const c=document.createElement("canvas"); const gl=c.getContext("webgl2")||c.getContext("webgl");
     const d=gl&&gl.getExtension("WEBGL_debug_renderer_info");
     const r=d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):(gl?gl.getParameter(gl.RENDERER):"");
@@ -1587,19 +1611,26 @@ function detectMasking(){
   try{ const zone=Intl.DateTimeFormat().resolvedOptions().timeZone;
     m.tzSpoofed = (zone==="UTC" && new Date().getTimezoneOffset()===0);   // RFP forces UTC
   }catch(e){}
+  m.audioRand = await audioFarbled();
   // Firefox RFP composite: timezone forced to UTC AND canvas/GPU masked — confident, low false-positive.
   m.rfp = ff && m.tzSpoofed && (m.canvasRand || m.canvasSpoofed || m.glMasked);
+  // Brave farbling confirmed active (not just Brave installed): with Shields down none
+  // of these noise sources fire, and Brave then really does link like stock Chrome.
+  m.braveFarbling = m.brave && (m.canvasRand || m.audioRand || m.glMasked);
   return m;
 }
-function estimateEntropy(){
+async function estimateEntropy(){
   const sig = { ...TIERS.hw, ...TIERS.engine, ...TIERS.build };  // stable identity only
-  const m = detectMasking();
+  const m = await detectMasking();
   const perTier = { hw:[], engine:[], build:[] };
   for(const key in sig){
     if(!(key in ENTROPY_BITS)) continue;
     let bits = ENTROPY_BITS[key];
     if((m.canvasRand||m.canvasSpoofed) && key==="canvas") bits = 0.3;                          // farbled or blanked
-    if(m.glMasked && (key==="glrend"||key==="glvendor"||key==="gpu"||key==="glext")) bits *= 0.25;
+    if((m.audioRand||m.braveFarbling) && key==="audio") bits = 0.3;                            // farbled audio is noise, not identity
+    const glKey = key==="glrend"||key==="glvendor"||key==="gpu"||key==="glext";
+    const braveKey = glKey||key==="cores"||key==="screen";   // Brave also farbles cores + screen dims
+    if((m.glMasked && glKey) || (m.braveFarbling && braveKey)) bits *= 0.25;
     if(m.tzSpoofed && key==="tz") bits *= 0.25;                                                // spoofed to UTC
     const t = TIER_MAP[key];
     if(perTier[t]) perTier[t].push(bits);
@@ -1614,7 +1645,7 @@ function estimateEntropy(){
   // drops even when the raw values still look distinctive. Our model can't see the population,
   // but it can recognise the disguise and credit it.
   if(m.rfp) bits *= 0.5;
-  else if(m.canvasRand || (m.glMasked && m.canvasSpoofed)) bits *= 0.72;
+  else if(m.canvasRand || m.audioRand || m.braveFarbling || (m.glMasked && m.canvasSpoofed)) bits *= 0.72;
   bits = Math.min(bits, WORLD_BITS + 4);
   const capped = Math.min(bits, WORLD_BITS);
   return { bits, pct: Math.min(99.9, capped/WORLD_BITS*100), oneIn: Math.pow(2, Math.min(bits,63)), masked:m };
@@ -1632,6 +1663,21 @@ function uniqBand(bits){
   return { label:"Effectively unique", cls:"warn" };
 }
 
+/* Tier-1 tag: the cross-browser claim only holds while the hardware signals are real.
+   When the browser spoofs or farbles them (Brave shields, Firefox), say that instead:
+   the ID mismatch a user sees across their browsers is the protection working. */
+function updateHwTag(m){
+  const el=$("#hwTag"); if(!el) return;
+  const masked = m.rfp || m.braveFarbling || m.glMasked;
+  el.classList.toggle("sess-ok", masked);
+  el.innerHTML = masked
+    ? "cross-engine · <em>masked</em> by your browser ✓ · won't match your other browsers"
+    : "cross-engine · links you across <em>different</em> browsers";
+  el.title = masked
+    ? "This browser randomizes or genericizes hardware signals (GPU strings, cores, canvas), so this ID changes between browsers and sessions. The mismatch is the protection working."
+    : "These signals come from the hardware and OS rather than the browser build, so on stock browsers the same ID re-forms in a different browser on this machine.";
+}
+
 async function computeIdentity(){
   const b=await detectBrowser();
   $("#browserBadge").innerHTML=`<b>${esc(b.name)}</b> ${esc(b.version)} · ${esc(b.engine)}`;
@@ -1644,7 +1690,8 @@ async function computeIdentity(){
   $("#buildHash").textContent = await tierHash("build");
   $("#sessHash").textContent = await tierHash("session");
   // --- identifiability estimate ---
-  const E = estimateEntropy();
+  const E = await estimateEntropy();
+  updateHwTag(E.masked);
   const bd = uniqBand(E.bits);
   const pctEl=$("#uniqPct");
   pctEl.className = "uniq-pct "+bd.cls;
@@ -1654,10 +1701,12 @@ async function computeIdentity(){
   $("#uniqLine").innerHTML = "≈ <b>"+esc(fmtOneIn(E.oneIn))+"</b> browsers share this profile"+ipBit;
   const bandEl=$("#uniqBand"); bandEl.hidden=false;
   bandEl.className="uniq-band "+bd.cls; bandEl.textContent=bd.label;
-  const maskNote = E.masked.rfp
+  const randed = E.masked.canvasRand||E.masked.audioRand||E.masked.braveFarbling;
+  const maskNote = (E.masked.rfp
     ? " Anti-fingerprinting (Firefox RFP) detected, so this is credited well below a stock browser."
-    : (E.masked.canvasRand||E.masked.canvasSpoofed||E.masked.glMasked||E.masked.tzSpoofed)
-      ? " Masking detected, so this reads lower than a stock browser." : "";
+    : (randed||E.masked.canvasSpoofed||E.masked.glMasked||E.masked.tzSpoofed)
+      ? " Masking detected, so this reads lower than a stock browser." : "")
+    + (randed ? " Randomized values look unique in a snapshot but change per session and site: they link nothing over time." : "");
   $("#uniqCaveat").textContent = "≈ "+E.bits.toFixed(1)+" bits of identifying info, estimated from fingerprinting research (a model, not a population count)."+maskNote;
   $("#entNum").textContent = Object.keys(allSignals()).length+" signals folded";
 }
@@ -1673,11 +1722,12 @@ $("#btnRerun").addEventListener("click", ()=>runAll());
 $("#btnCopy").addEventListener("click", async e=>{
   const th = async t => { const k=Object.keys(TIERS[t]).sort();
     return k.length? await sha256(k.map(x=>x+"="+TIERS[t][x]).join("|")) : "(none)"; };
-  const est=estimateEntropy();
+  const est=await estimateEntropy();
   const report={ generated:new Date().toISOString(),
     browser:BROWSER,
     identifiability:{ percent:Math.round(est.pct), bits:+est.bits.toFixed(1),
       oneInApprox:Math.round(est.oneIn), band:uniqBand(est.bits).label, model:"estimate, not a live-population measurement" },
+    masking:est.masked,
     tierHashes:{ hardware:await th("hw"), engine:await th("engine"),
                  build:await th("build"), session:await th("session") },
     tiers:{ hardware:TIERS.hw, engine:TIERS.engine, build:TIERS.build, session:TIERS.session },
